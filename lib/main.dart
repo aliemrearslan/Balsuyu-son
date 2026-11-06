@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const BalsuyuServisApp());
@@ -60,6 +61,9 @@ String getBugununGunu() {
   final weekday = DateTime.now().weekday;
   return gunler[weekday - 1];
 }
+
+// Plakaları boşluksuz ve büyük harfe eşitleyen yardımcı fonksiyon
+String normalizePlaka(String s) => s.replaceAll(' ', '').toUpperCase().trim();
 
 // ---------------------------------------------------------------------------
 // MODELLER
@@ -156,14 +160,13 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
     verileriGoogleTablodanCek();
   }
 
-  // GOOGLE E-TABLODAN CANLI VERİ ÇEKME / YENİLEME FONKSİYONU
   Future<void> verileriGoogleTablodanCek() async {
     try {
       final response = await http.get(Uri.parse(googleTabloWebhookUrl));
       if (response.statusCode == 200) {
         final hamVeri = jsonDecode(response.body);
 
-        // 1. Nöbetçi Öğretmenler
+        // 1. Nöbetçiler
         final List<NobetciOgretmen> yuklenenNobetciler = [];
         if (hamVeri['nobetciler'] != null) {
           for (var item in hamVeri['nobetciler']) {
@@ -185,7 +188,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
           bugununNobetcisi = yuklenenNobetciler.isNotEmpty ? yuklenenNobetciler.first : null;
         }
 
-        // 2. Öğrenciler (Şifreli)
+        // 2. Öğrenciler
         final List<Ogrenci> yuklenenOgrenciler = [];
         if (hamVeri['ogrenciler'] != null) {
           for (var item in hamVeri['ogrenciler']) {
@@ -201,12 +204,14 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
           }
         }
 
-        // 3. Servis Hatları & Güzergahlar
+        // 3. Servisler (Boşluksuz ve esnek plaka eşleştirmesi)
         final List<ServisHatti> yuklenenServisler = [];
         if (hamVeri['servisler'] != null) {
           for (var item in hamVeri['servisler']) {
             final plaka = item['plaka'].toString().trim();
-            final oServisinOgrencileri = yuklenenOgrenciler.where((o) => o.plaka == plaka).toList();
+            final oServisinOgrencileri = yuklenenOgrenciler
+                .where((o) => normalizePlaka(o.plaka) == normalizePlaka(plaka))
+                .toList();
 
             yuklenenServisler.add(ServisHatti(
               plaka: plaka,
@@ -299,7 +304,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
         nobetciler: nobetciler,
         varsayilanNobetci: aktifNobetci,
         onNobetciGuncellendi: (yeni) => setState(() => aktifNobetci = yeni),
-        onYenile: verileriGoogleTablodanCek, // 🔄 Yenileme Tetikleyicisi
+        onYenile: verileriGoogleTablodanCek,
       ),
       OgrenciNfcEkrani(
         aktifNobetci: aktifNobetci,
@@ -335,7 +340,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
 }
 
 // ---------------------------------------------------------------------------
-// 1. EKRAN: ÖĞRETMEN CANLI TAKİP PANELİ (PIN + DİNAMİK SERVİSLER + 🔄 YENİLE BUTONU)
+// 1. EKRAN: ÖĞRETMEN CANLI TAKİP PANELİ
 // ---------------------------------------------------------------------------
 class OgretmenPaneli extends StatefulWidget {
   final List<ServisHatti> servisler;
@@ -636,7 +641,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
           ],
         ),
         actions: [
-          // 🔄 CANLI YENİLEME BUTONU (YENİ EKLENDİ)
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 22),
             tooltip: 'Tablodaki Yeni Servis ve Öğrencileri Yenile',
@@ -667,12 +671,11 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
         ],
       ),
       body: aktifServis == null
-          ? const Center(child: Text("Tabloda kayıtlı servis hattı bulunamadı. Lütfen 'Servisler' sekmesini kontrol edin."))
+          ? const Center(child: Text("Tabloda kayıtlı servis hattı bulunamadı."))
           : RefreshIndicator(
-              onRefresh: widget.onYenile, // Aşağı kaydırarak yenileme (Pull to refresh)
+              onRefresh: widget.onYenile,
               child: Column(
                 children: [
-                  // DİNAMİK PLAKA VE HAT SEÇİCİ
                   Container(
                     height: 52,
                     padding: const EdgeInsets.symmetric(vertical: 5),
@@ -702,8 +705,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                       },
                     ),
                   ),
-
-                  // DİNAMİK GÜZERGAH VE ŞOFÖR KARTI (TABLODAN GELEN)
                   Container(
                     margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
                     padding: const EdgeInsets.all(9),
@@ -735,8 +736,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                       ],
                     ),
                   ),
-
-                  // Sayaçlar
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                     child: Row(
@@ -749,8 +748,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                       ],
                     ),
                   ),
-
-                  // Bu Servise Ait Canlı Öğrenci Listesi
                   Expanded(
                     child: aktifServis.ogrenciler.isEmpty
                         ? Center(
@@ -865,7 +862,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
 }
 
 // ---------------------------------------------------------------------------
-// 2. EKRAN: ÖĞRENCİ GÜVENLİ GİRİŞ & NFC EKRANI
+// 2. EKRAN: ÖĞRENCİ GÜVENLİ GİRİŞ & NFC EKRANI (BENİ HATIRLA / KALICI HAFIZA)
 // ---------------------------------------------------------------------------
 class OgrenciNfcEkrani extends StatefulWidget {
   final NobetciOgretmen? aktifNobetci;
@@ -889,7 +886,43 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   String sonIslemDurumu = 'bekliyor';
   String islemSaati = '';
 
-  void ogrenciGirisYap() {
+  @override
+  void initState() {
+    super.initState();
+    kayitliOgrenciyiYukle();
+  }
+
+  @override
+  void didUpdateWidget(covariant OgrenciNfcEkrani oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Veriler Google'dan sonradan gelirse otomatik giriş kontrolü
+    if (girisYapanOgrenci == null && widget.tumOgrenciler.isNotEmpty) {
+      kayitliOgrenciyiYukle();
+    }
+  }
+
+  // TELEFONUN GÜVENLİ HAFIZASINDAN ÖĞRENCİYİ HATIRLA
+  Future<void> kayitliOgrenciyiYukle() async {
+    final prefs = await SharedPreferences.getInstance();
+    final kayitliNo = prefs.getString('balsuyu_ogr_no');
+    final kayitliSifre = prefs.getString('balsuyu_ogr_sifre');
+
+    if (kayitliNo != null && kayitliSifre != null && widget.tumOgrenciler.isNotEmpty) {
+      try {
+        final bulunan = widget.tumOgrenciler.firstWhere(
+          (o) => o.id == kayitliNo && o.sifre == kayitliSifre,
+        );
+        if (mounted) {
+          setState(() {
+            girisYapanOgrenci = bulunan;
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  // İLK GİRİŞ YAPILDIĞINDA TELEFONA KALICI OLARAK KAYDET
+  Future<void> ogrenciGirisYap() async {
     final girilenNo = noController.text.trim();
     final girilenSifre = sifreController.text.trim();
 
@@ -897,6 +930,11 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       final bulunanOgrenci = widget.tumOgrenciler.firstWhere(
         (o) => o.id == girilenNo && o.sifre == girilenSifre,
       );
+
+      // Telefon hafızasına kalıcı yaz
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('balsuyu_ogr_no', bulunanOgrenci.id);
+      await prefs.setString('balsuyu_ogr_sifre', bulunanOgrenci.sifre);
 
       setState(() {
         girisYapanOgrenci = bulunanOgrenci;
@@ -911,6 +949,14 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
         ),
       );
     }
+  }
+
+  // ÇIKIŞ YAPILIRSA TELEFONUN HAFIZASINI TEMİZLE
+  Future<void> ogrenciCikisYap() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('balsuyu_ogr_no');
+    await prefs.remove('balsuyu_ogr_sifre');
+    setState(() => girisYapanOgrenci = null);
   }
 
   void nfcOkundu(String islemTipi) {
@@ -1075,8 +1121,8 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.logout, color: Colors.white60, size: 18),
-                          tooltip: 'Çıkış Yap',
-                          onPressed: () => setState(() => girisYapanOgrenci = null),
+                          tooltip: 'Çıkış Yap (Cihazı Sıfırla)',
+                          onPressed: ogrenciCikisYap,
                         ),
                       ],
                     ),
