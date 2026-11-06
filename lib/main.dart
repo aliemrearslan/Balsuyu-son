@@ -53,7 +53,7 @@ Future<void> googleTabloyaGonder({
       body: veriPaketi,
     );
   } catch (e) {
-    // Tarayıcı yönlendirmesini yönetir
+    // Tarayıcı ve ağ yönlendirmelerini yönetir
   }
 }
 
@@ -65,22 +65,23 @@ String getBugununGunu() {
 
 String normalizePlaka(String s) => s.replaceAll(' ', '').toUpperCase().trim();
 
+// Telefon numaralarını boşluksuz ve başında 0 olmadan eşitleyen fonksiyon
 String normalizeTel(String t) {
   final clean = t.replaceAll(RegExp(r'[^0-9]'), '');
   return clean.startsWith('0') ? clean.substring(1) : clean;
 }
 
-// Şoför için KVKK Uyumlu İsim Maskeleme (Örn: Ahmet Yılmaz -> Ahmet Y.)
-String maskeleAdSoyad(String adSoyad) {
+// Şoför Paneli İçin KVKK Uyumlu Soyad Maskeleme (Örn: "Ahmet Yılmaz" -> "Ahmet Y.")
+String maskeleSoyad(String adSoyad) {
   final parcalar = adSoyad.trim().split(RegExp(r'\s+'));
-  if (parcalar.isEmpty) return "";
-  if (parcalar.length == 1) return parcalar[0];
-  final ad = parcalar.sublist(0, parcalar.length - 1).join(" ");
+  if (parcalar.length <= 1) return adSoyad;
   final soyad = parcalar.last;
-  final soyadIlkHarf = soyad.isNotEmpty ? "${soyad[0]}." : "";
-  return "$ad $soyadIlkHarf";
+  final adlar = parcalar.sublist(0, parcalar.length - 1).join(' ');
+  final soyadIlkHarf = soyad.isNotEmpty ? soyad[0].toUpperCase() : '';
+  return '$adlar $soyadIlkHarf.';
 }
 
+// Telefonla Arama Yardımcı Fonksiyonu
 Future<void> telefonlaAra(BuildContext context, String tel) async {
   final cleanTel = tel.replaceAll(RegExp(r'[^0-9+]'), '');
   if (cleanTel.isEmpty || cleanTel == "-") {
@@ -156,7 +157,7 @@ class ServisHatti {
 }
 
 // ---------------------------------------------------------------------------
-// ANA UYGULAMA YAPISI (4 PROFİL: ÖĞRENCİ - VELİ - ŞOFÖR - ÖĞRETMEN)
+// ANA UYGULAMA YAPISI (ÖĞRENCİ - VELİ - ŞOFÖR - ÖĞRETMEN)
 // ---------------------------------------------------------------------------
 class BalsuyuServisApp extends StatelessWidget {
   const BalsuyuServisApp({super.key});
@@ -183,7 +184,7 @@ class AnaGecisEkrani extends StatefulWidget {
 }
 
 class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
-  // 0: ÖĞRENCİ, 1: VELİ, 2: ŞOFÖR, 3: ÖĞRETMEN
+  // 0: ÖĞRENCİ NFC, 1: VELİ TAKİP, 2: ŞOFÖR PANELİ, 3: ÖĞRETMEN PANELİ
   int aktifSayfa = 0;
 
   bool veriYukleniyor = true;
@@ -352,7 +353,6 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
       ),
       SoforPaneli(
         servisler: servisler,
-        aktifNobetci: aktifNobetci,
         onYenile: verileriGoogleTablodanCek,
       ),
       OgretmenPaneli(
@@ -368,7 +368,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
       body: sayfalar[aktifSayfa],
       bottomNavigationBar: NavigationBar(
         selectedIndex: aktifSayfa,
-        height: 60,
+        height: 64,
         backgroundColor: Colors.white,
         elevation: 4,
         onDestinationSelected: (index) {
@@ -378,17 +378,17 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
           NavigationDestination(
             icon: Icon(Icons.nfc_outlined),
             selectedIcon: Icon(Icons.nfc, color: Color(0xFF0A2E26)),
-            label: 'Öğrenci',
+            label: 'Öğrenci NFC',
           ),
           NavigationDestination(
             icon: Icon(Icons.family_restroom_outlined),
             selectedIcon: Icon(Icons.family_restroom, color: Color(0xFF0A2E26)),
-            label: 'Veli',
+            label: 'Veli Takip',
           ),
           NavigationDestination(
             icon: Icon(Icons.directions_bus_outlined),
             selectedIcon: Icon(Icons.directions_bus, color: Color(0xFF0A2E26)),
-            label: 'Şoför',
+            label: 'Şoför Paneli',
           ),
           NavigationDestination(
             icon: Icon(Icons.admin_panel_settings_outlined),
@@ -402,438 +402,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
 }
 
 // ---------------------------------------------------------------------------
-// 1. EKRAN: ŞOFÖR PANELİ (SADECE KENDİ ARACI + İSİM MASKELİ KVKK + ARAÇ TAM SAYACI)
-// ---------------------------------------------------------------------------
-class SoforPaneli extends StatefulWidget {
-  final List<ServisHatti> servisler;
-  final NobetciOgretmen? aktifNobetci;
-  final Future<void> Function() onYenile;
-
-  const SoforPaneli({
-    super.key,
-    required this.servisler,
-    required this.aktifNobetci,
-    required this.onYenile,
-  });
-
-  @override
-  State<SoforPaneli> createState() => _SoforPaneliState();
-}
-
-class _SoforPaneliState extends State<SoforPaneli> {
-  ServisHatti? aktifSoforServisi;
-  final TextEditingController telController = TextEditingController();
-  String? secilenPlaka;
-
-  @override
-  void initState() {
-    super.initState();
-    kayitliSoforuYukle();
-  }
-
-  @override
-  void didUpdateWidget(covariant SoforPaneli oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (aktifSoforServisi == null && widget.servisler.isNotEmpty) {
-      kayitliSoforuYukle();
-    } else if (aktifSoforServisi != null) {
-      // Veriler yenilenirse mevcut servisi de güncelle
-      try {
-        final guncel = widget.servisler.firstWhere(
-          (s) => normalizePlaka(s.plaka) == normalizePlaka(aktifSoforServisi!.plaka),
-        );
-        setState(() => aktifSoforServisi = guncel);
-      } catch (_) {}
-    }
-  }
-
-  Future<void> kayitliSoforuYukle() async {
-    final prefs = await SharedPreferences.getInstance();
-    final kayitliPlaka = prefs.getString('balsuyu_sofor_plaka');
-    final kayitliTel = prefs.getString('balsuyu_sofor_tel');
-
-    if (kayitliPlaka != null && kayitliTel != null && widget.servisler.isNotEmpty) {
-      try {
-        final bulunan = widget.servisler.firstWhere(
-          (s) =>
-              normalizePlaka(s.plaka) == normalizePlaka(kayitliPlaka) &&
-              normalizeTel(s.soforTel) == normalizeTel(kayitliTel),
-        );
-        if (mounted) setState(() => aktifSoforServisi = bulunan);
-      } catch (_) {}
-    }
-  }
-
-  Future<void> soforGirisYap() async {
-    final girilenTel = telController.text.trim();
-    if (secilenPlaka == null || girilenTel.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Lütfen plaka seçin ve telefon numaranızı girin.")),
-      );
-      return;
-    }
-
-    try {
-      final bulunanServis = widget.servisler.firstWhere(
-        (s) =>
-            normalizePlaka(s.plaka) == normalizePlaka(secilenPlaka!) &&
-            normalizeTel(s.soforTel) == normalizeTel(girilenTel),
-      );
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('balsuyu_sofor_plaka', bulunanServis.plaka);
-      await prefs.setString('balsuyu_sofor_tel', girilenTel);
-
-      setState(() => aktifSoforServisi = bulunanServis);
-      telController.clear();
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: Colors.red,
-          content: Text("Plaka veya telefon numarası sistemle eşleşmedi!"),
-        ),
-      );
-    }
-  }
-
-  Future<void> soforCikisYap() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('balsuyu_sofor_plaka');
-    await prefs.remove('balsuyu_sofor_tel');
-    setState(() => aktifSoforServisi = null);
-  }
-
-  void durumuDegistir(Ogrenci ogr, String yeniDurum, String plaka) {
-    setState(() {
-      ogr.durum = yeniDurum;
-      final now = DateTime.now();
-      ogr.saat = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
-    });
-
-    googleTabloyaGonder(
-      plaka: plaka,
-      koy: ogr.koyDurak,
-      adSoyad: ogr.adSoyad,
-      sinif: ogr.sinif,
-      islem: yeniDurum == 'serviste' ? 'BİNDİ' : 'İNDİ',
-      yontem: 'Şoför (Manuel)',
-      ogretmen: widget.aktifNobetci?.adSoyad ?? "Bilinmiyor",
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: Colors.teal.shade800,
-        content: Text("${maskeleAdSoyad(ogr.adSoyad)} bindi olarak işaretlendi! ✅"),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (aktifSoforServisi == null) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0F172A),
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  mebLogoRozeti(),
-                  const SizedBox(height: 16),
-                  const Text(
-                    "BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.3),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    "Servis Şoförü Güvenli Girişi",
-                    style: TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(height: 28),
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.teal.withOpacity(0.3)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text("Servis Aracınızın Plakası:", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          value: secilenPlaka,
-                          dropdownColor: const Color(0xFF1E293B),
-                          style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: const Color(0xFF0F172A),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                          ),
-                          items: widget.servisler.map((s) {
-                            return DropdownMenuItem(
-                              value: s.plaka,
-                              child: Text("${s.plaka} (${s.hatAdi})"),
-                            );
-                          }).toList(),
-                          onChanged: (val) => setState(() => secilenPlaka = val),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text("Kayıtlı Şoför Telefon Numaranız:", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: telController,
-                          keyboardType: TextInputType.phone,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                          decoration: InputDecoration(
-                            hintText: "Örn: 05321112233",
-                            hintStyle: const TextStyle(color: Colors.white24),
-                            filled: true,
-                            fillColor: const Color(0xFF0F172A),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.teal.shade700,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(double.infinity, 46),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          icon: const Icon(Icons.directions_bus),
-                          label: const Text("Aracıma Giriş Yap", style: TextStyle(fontWeight: FontWeight.bold)),
-                          onPressed: soforGirisYap,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 30),
-                  arslanogluGroupFooter(),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final ogrenciler = aktifSoforServisi!.ogrenciler;
-    final binenler = ogrenciler.where((o) => o.durum == 'serviste').length;
-    final beklenenler = ogrenciler.where((o) => o.durum == 'binmedi').length;
-    final toplamOgrenci = ogrenciler.length;
-    final aracTamMi = beklenenler == 0 && toplamOgrenci > 0;
-
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0A2E26),
-        foregroundColor: Colors.white,
-        elevation: 3,
-        title: Row(
-          children: [
-            mebLogoRozeti(),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "ŞOFÖR: ${aktifSoforServisi!.soforAdi}",
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.3),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    "${aktifSoforServisi!.plaka} — ${aktifSoforServisi!.hatAdi}",
-                    style: const TextStyle(fontSize: 10, color: Colors.tealAccent),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, size: 22),
-            tooltip: 'Yenile',
-            onPressed: () async {
-              await widget.onYenile();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Yolcu listesi güncellendi! 🔄")),
-                );
-              }
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white70, size: 20),
-            tooltip: 'Çıkış',
-            onPressed: soforCikisYap,
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // DEVAŞA "HAREKET ETMEYE HAZIR MI?" DURUM BANNERI
-            Container(
-              margin: const EdgeInsets.all(12),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: aracTamMi ? Colors.green.shade900.withOpacity(0.5) : Colors.orange.shade900.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: aracTamMi ? Colors.greenAccent : Colors.orangeAccent, width: 2),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    aracTamMi ? Icons.check_circle_rounded : Icons.pending_actions_rounded,
-                    color: aracTamMi ? Colors.greenAccent : Colors.orangeAccent,
-                    size: 38,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          aracTamMi ? "ARAÇ TAM! HAREKET EDEBİLİRSİNİZ 🚀" : "$beklenenler ÖĞRENCİ HENÜZ BİNMEDİ ⏳",
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: aracTamMi ? Colors.greenAccent : Colors.orangeAccent,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          "Toplam: $toplamOgrenci | Binen: $binenler | Beklenen: $beklenenler",
-                          style: const TextStyle(fontSize: 11, color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // ÖĞRENCİ LİSTESİ BAŞLIĞI
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 2),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    "Araca Binecek Öğrenciler (KVKK Gizli)",
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                  Text(
-                    "Güzergah: ${aktifSoforServisi!.guzergah.split('➔')[0]}...",
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-
-            // ÖĞRENCİ LİSTESİ (İSİM TAM, SOYİSİM İLK HARF)
-            Expanded(
-              child: ogrenciler.isEmpty
-                  ? const Center(child: Text("Bu servise kayıtlı öğrenci yok.", style: TextStyle(color: Colors.grey)))
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      itemCount: ogrenciler.length,
-                      itemBuilder: (context, index) {
-                        final ogr = ogrenciler[index];
-                        final bindiMi = ogr.durum == 'serviste';
-
-                        return Card(
-                          elevation: 1,
-                          margin: const EdgeInsets.only(bottom: 6),
-                          color: const Color(0xFF1E293B),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            side: BorderSide(color: bindiMi ? Colors.tealAccent.withOpacity(0.4) : Colors.white10),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 16,
-                                  backgroundColor: bindiMi ? Colors.green.shade800 : Colors.grey.shade800,
-                                  child: Icon(
-                                    bindiMi ? Icons.check : Icons.person_outline,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      // MASKELİ İSİM (Örn: Ahmet Y.)
-                                      Text(
-                                        maskeleAdSoyad(ogr.adSoyad),
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
-                                      ),
-                                      Text(
-                                        "Durak: ${ogr.koyDurak} (${ogr.sinif})",
-                                        style: const TextStyle(fontSize: 10, color: Colors.grey),
-                                      ),
-                                      if (ogr.saat != null && bindiMi)
-                                        Text(
-                                          "Biniş: ${ogr.saat}",
-                                          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.tealAccent),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                Row(
-                                  children: [
-                                    // Şoför Manuel Bindi Butonu
-                                    if (!bindiMi)
-                                      IconButton(
-                                        icon: const Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 24),
-                                        tooltip: 'Öğrenciyi Bindi Yap',
-                                        onPressed: () => durumuDegistir(ogr, 'serviste', aktifSoforServisi!.plaka),
-                                      ),
-
-                                    // VELİYİ ARA BUTONU
-                                    ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.green.shade800,
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        minimumSize: const Size(50, 26),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                      ),
-                                      icon: const Icon(Icons.call, size: 12),
-                                      label: const Text("Veli", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                                      onPressed: () => telefonlaAra(context, ogr.veliTel),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-            arslanogluGroupFooter(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 2. EKRAN: VELİ TAKİP PANELİ
+// 1. EKRAN: VELİ TAKİP PANELİ (KVKK UYUMLU)
 // ---------------------------------------------------------------------------
 class VeliPaneli extends StatefulWidget {
   final List<Ogrenci> tumOgrenciler;
@@ -859,6 +428,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
 
   final TextEditingController noController = TextEditingController();
   final TextEditingController telController = TextEditingController();
+
   int gunlukIslemAdimi = 0;
 
   @override
@@ -1136,7 +706,9 @@ class _VeliPaneliState extends State<VeliPaneli> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 14),
+
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -1162,14 +734,18 @@ class _VeliPaneliState extends State<VeliPaneli> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 14),
+
               const Text("Günün Servis Yolculuk Çizelgesi", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
               const SizedBox(height: 8),
               _zamanCizelgesiSatiri("1. Sabah Köyden Biniş", "Öğrenci köy durağından servise bindi.", gunlukIslemAdimi > 0),
               _zamanCizelgesiSatiri("2. Sabah Okula Varış", "Öğrenci okula sağ salim ulaştı, derste.", gunlukIslemAdimi > 1),
               _zamanCizelgesiSatiri("3. Akşam Okuldan Çıkış", "Öğrenci okul çıkışı servise bindi, köye geliyor.", gunlukIslemAdimi > 2),
               _zamanCizelgesiSatiri("4. Akşam Köye Varış", "Öğrenci köy durağında indi, eve ulaştı.", gunlukIslemAdimi > 3),
+
               const SizedBox(height: 14),
+
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -1218,6 +794,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 20),
               arslanogluGroupFooter(),
             ],
@@ -1295,6 +872,378 @@ class _VeliPaneliState extends State<VeliPaneli> {
     if (gunlukIslemAdimi == 2) return "Öğrenci güvenle okula vardı, dersleri devam ediyor.";
     if (gunlukIslemAdimi == 3) return "Öğrenci okul çıkışı servise bindi, köye doğru yolda.";
     return "Öğrenci köy durağında servisten indi, bugünkü yolculuk tamamlandı.";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 2. EKRAN: SERVİS ŞOFÖRÜ TAKİP PANELİ (SALT OKUNUR - KVKK UYUMLU)
+// ---------------------------------------------------------------------------
+class SoforPaneli extends StatefulWidget {
+  final List<ServisHatti> servisler;
+  final Future<void> Function() onYenile;
+
+  const SoforPaneli({
+    super.key,
+    required this.servisler,
+    required this.onYenile,
+  });
+
+  @override
+  State<SoforPaneli> createState() => _SoforPaneliState();
+}
+
+class _SoforPaneliState extends State<SoforPaneli> {
+  ServisHatti? soforServisi;
+  final TextEditingController telController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    kayitliSoforuYukle();
+  }
+
+  Future<void> kayitliSoforuYukle() async {
+    final prefs = await SharedPreferences.getInstance();
+    final kayitliTel = prefs.getString('balsuyu_sofor_tel');
+
+    if (kayitliTel != null && widget.servisler.isNotEmpty) {
+      try {
+        final bulunan = widget.servisler.firstWhere(
+          (s) => normalizeTel(s.soforTel) == normalizeTel(kayitliTel),
+        );
+        if (mounted) setState(() => soforServisi = bulunan);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> soforGirisYap() async {
+    final girilenTel = telController.text.trim();
+    try {
+      final bulunanServis = widget.servisler.firstWhere(
+        (s) => normalizeTel(s.soforTel) == normalizeTel(girilenTel),
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('balsuyu_sofor_tel', girilenTel);
+
+      setState(() => soforServisi = bulunanServis);
+      telController.clear();
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.red,
+          content: Text("Bu telefon numarasına ait bir servis kaydı bulunamadı!"),
+        ),
+      );
+    }
+  }
+
+  Future<void> soforCikisYap() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('balsuyu_sofor_tel');
+    setState(() => soforServisi = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (soforServisi == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  mebLogoRozeti(),
+                  const SizedBox(height: 16),
+                  const Text(
+                    "BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    "Servis Kaptanı / Şoför Girişi",
+                    style: TextStyle(color: Colors.amberAccent, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 28),
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("Sistemde Kayıtlı Telefon Numaranız:", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: telController,
+                          keyboardType: TextInputType.phone,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          decoration: InputDecoration(
+                            hintText: "Örn: 05551234567",
+                            hintStyle: const TextStyle(color: Colors.white24),
+                            filled: true,
+                            fillColor: const Color(0xFF0F172A),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber.shade700,
+                            foregroundColor: Colors.black87,
+                            minimumSize: const Size(double.infinity, 46),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: const Icon(Icons.directions_bus_rounded),
+                          label: const Text("Servisimi Aç ve Başla", style: TextStyle(fontWeight: FontWeight.bold)),
+                          onPressed: soforGirisYap,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  arslanogluGroupFooter(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final ogrenciler = soforServisi!.ogrenciler;
+    final binenSayisi = ogrenciler.where((o) => o.durum == 'serviste').length;
+    final inenSayisi = ogrenciler.where((o) => o.durum == 'indi').length;
+    final bekleyenSayisi = ogrenciler.where((o) => o.durum == 'binmedi').length;
+    final toplamOgrenci = ogrenciler.length;
+    final hepsiBindiMi = toplamOgrenci > 0 && bekleyenSayisi == 0;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1E293B),
+        foregroundColor: Colors.white,
+        elevation: 3,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "${soforServisi!.plaka} — Kaptan Paneli",
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.amberAccent),
+            ),
+            Text(
+              "Şoför: ${soforServisi!.soforAdi}",
+              style: const TextStyle(fontSize: 11, color: Colors.white70),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Yenile',
+            onPressed: () async {
+              await widget.onYenile();
+              await kayitliSoforuYukle();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Öğrenci yoklaması güncellendi! 🔄")),
+                );
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Çıkış',
+            onPressed: soforCikisYap,
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: hepsiBindiMi ? Colors.green.shade900.withOpacity(0.4) : Colors.orange.shade900.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: hepsiBindiMi ? Colors.greenAccent : Colors.orangeAccent,
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    hepsiBindiMi ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
+                    color: hepsiBindiMi ? Colors.greenAccent : Colors.orangeAccent,
+                    size: 38,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hepsiBindiMi ? "TÜM ÖĞRENCİLER HAZIR!" : "$bekleyenSayisi ÖĞRENCİ BEKLENİYOR",
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: hepsiBindiMi ? Colors.greenAccent : Colors.orangeAccent,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          hepsiBindiMi
+                              ? "Aracınız tam kapasite. Güvenle hareket edebilirsiniz. 🚀"
+                              : "Henüz araca binmeyen öğrenciler var. Lütfen bekleyiniz.",
+                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  _soforSayac("Toplam", "$toplamOgrenci", Colors.white),
+                  const SizedBox(width: 6),
+                  _soforSayac("Binen", "$binenSayisi", Colors.greenAccent),
+                  const SizedBox(width: 6),
+                  _soforSayac("Beklenen", "$bekleyenSayisi", Colors.orangeAccent),
+                  const SizedBox(width: 6),
+                  _soforSayac("İnen (Okulda)", "$inenSayisi", Colors.blueAccent),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: ogrenciler.isEmpty
+                  ? const Center(child: Text("Bu servise kayıtlı öğrenci bulunamadı.", style: TextStyle(color: Colors.grey)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      itemCount: ogrenciler.length,
+                      itemBuilder: (context, index) {
+                        final ogr = ogrenciler[index];
+                        final bindiMi = ogr.durum == 'serviste';
+                        final indiMi = ogr.durum == 'indi';
+
+                        return Card(
+                          color: const Color(0xFF1E293B),
+                          elevation: 1,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: bindiMi
+                                  ? Colors.green.withOpacity(0.5)
+                                  : indiMi
+                                      ? Colors.blue.withOpacity(0.5)
+                                      : Colors.white10,
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  bindiMi
+                                      ? Icons.check_circle
+                                      : indiMi
+                                          ? Icons.school
+                                          : Icons.radio_button_unchecked,
+                                  color: bindiMi
+                                      ? Colors.greenAccent
+                                      : indiMi
+                                          ? Colors.blueAccent
+                                          : Colors.grey,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        maskeleSoyad(ogr.adSoyad),
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.location_on, size: 12, color: Colors.amberAccent),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            ogr.koyDurak,
+                                            style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                          ),
+                                        ],
+                                      ),
+                                      if (ogr.saat != null)
+                                        Text(
+                                          bindiMi ? "Bindi: ${ogr.saat}" : "İndi: ${ogr.saat}",
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: bindiMi ? Colors.greenAccent : Colors.blueAccent,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.teal.shade800,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    minimumSize: const Size(40, 32),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.phone, size: 14),
+                                  label: const Text("Veliyi Ara", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  onPressed: () => telefonlaAra(context, ogr.veliTel),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            arslanogluGroupFooter(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _soforSayac(String baslik, String deger, Color renk) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: renk.withOpacity(0.3)),
+        ),
+        child: Column(
+          children: [
+            Text(deger, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: renk)),
+            Text(baslik, style: TextStyle(fontSize: 9, color: Colors.grey.shade400)),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1566,7 +1515,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
         : null;
     final binenSayisi = aktifServis?.ogrenciler.where((o) => o.durum == 'serviste').length ?? 0;
     final inenSayisi = aktifServis?.ogrenciler.where((o) => o.durum == 'indi').length ?? 0;
-    final beklenenSayisi = aktifServis?.ogrenciler.where((o) => o.durum == 'binmedi').length ?? 0;
+    final bekleyenSayisi = aktifServis?.ogrenciler.where((o) => o.durum == 'binmedi').length ?? 0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),
@@ -2205,6 +2154,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
                         ),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade
                             backgroundColor: Colors.green.shade700,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2328,7 +2278,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   Widget _adimRozeti(String adimAdi, bool tamamlandi, bool aktif) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.vertical(4),
         decoration: BoxDecoration(
           color: tamamlandi
               ? Colors.teal.shade900
@@ -2448,4 +2398,3 @@ Widget arslanogluGroupFooter() {
     ),
   );
 }
-```
