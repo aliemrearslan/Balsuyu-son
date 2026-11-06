@@ -1651,7 +1651,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                         const SizedBox(width: 6),
                         _sayacKutusu("Okulda (İndi)", inenSayisi, Colors.blue),
                         const SizedBox(width: 6),
-                        _sayacKutusu("Bekleniyor", beklenenSayisi, Colors.orange),
+                        _sayacKutusu("Bekleniyor", bekleyenSayisi, Colors.orange),
                       ],
                     ),
                   ),
