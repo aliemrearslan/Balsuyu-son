@@ -120,6 +120,7 @@ class Ogrenci {
   final String veliTel;
   final String sifre;
   String durum;
+  int adim;
   String? saat;
 
   Ogrenci({
@@ -131,6 +132,7 @@ class Ogrenci {
     required this.veliTel,
     required this.sifre,
     this.durum = 'binmedi',
+    this.adim = 0,
     this.saat,
   });
 }
@@ -241,6 +243,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
               durum: (item['durum'] != null && item['durum'].toString().isNotEmpty)
                   ? item['durum'].toString().trim()
                   : 'binmedi',
+              adim: item['adim'] != null ? int.tryParse(item['adim'].toString()) ?? 0 : 0,
               saat: item['saat']?.toString().trim(),
             ));
           }
@@ -439,11 +442,17 @@ class _VeliPaneliState extends State<VeliPaneli> {
     kayitliVeliyiYukle();
   }
 
-  @override
+@override
   void didUpdateWidget(covariant VeliPaneli oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (veliOgrencisi == null && widget.tumOgrenciler.isNotEmpty) {
-      kayitliVeliyiYukle();
+    if (veliOgrencisi != null && widget.tumOgrenciler.isNotEmpty) {
+      try {
+        final guncel = widget.tumOgrenciler.firstWhere((o) => o.id == veliOgrencisi!.id);
+        setState(() {
+          veliOgrencisi = guncel;
+          gunlukIslemAdimi = guncel.adim; // Artık yerel telefondan değil Google'dan alıyor!
+        });
+      } catch (_) {}
     }
     servisBilgisiniBul();
   }
