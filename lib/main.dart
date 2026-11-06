@@ -2154,7 +2154,6 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
                         ),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green.shade
                             backgroundColor: Colors.green.shade700,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
