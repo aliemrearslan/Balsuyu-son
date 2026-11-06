@@ -30,16 +30,28 @@ jobs:
           channel: 'stable'
 
       - run: flutter create . --platforms=android,web
+
+      # ANDROID İNTERNET İZNİ EKLEME (VERİ HATASINI ÇÖZEN ADIM)
+      - run: |
+          python3 -c "
+          path = 'android/app/src/main/AndroidManifest.xml'
+          with open(path, 'r') as f:
+              content = f.read()
+          content = content.replace('<application', '<uses-permission android:name=\"android.permission.INTERNET\"/>\n    <application')
+          with open(path, 'w') as f:
+              f.write(content)
+          "
+
       - run: flutter pub get
 
-      # 1. Android APK Üretimi
+      # 1. Android APK
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
           name: balsuyu-servis-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
-      # 2. iPhone (Safari) Web Üretimi
+      # 2. iPhone Web (Büyük B Harfi ile)
       - run: flutter build web --release --base-href "/Balsuyu-son/"
       - uses: actions/upload-pages-artifact@v3
         with:
