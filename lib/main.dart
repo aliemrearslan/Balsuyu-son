@@ -175,7 +175,6 @@ class BildirimServisi {
 
     await _plugin.initialize(settings);
 
-    // Android 13+ izin iste
     await _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
@@ -208,19 +207,23 @@ class BildirimServisi {
     );
   }
 
-  // ÖĞRENCİ SAATLERİ (07:10, 07:45, 15:30)
+  // ÖĞRENCİ FONKSİYONU
   static Future<void> ogrenciHatirlatmalariKur() async {
     await _alarmKur(101, "Balsuyu MTAL - Servis Biniş", "Servise bindiğinizi doğrulamanız gerekiyor! 🚌", 7, 10);
     await _alarmKur(102, "Balsuyu MTAL - Okula Varış", "Okula vardınız, servisten indiğinizi doğrulayınız! 🏫", 7, 45);
     await _alarmKur(103, "Balsuyu MTAL - Akşam Çıkış", "Servise binişinizi onaylamanız gerekiyor! 🎒", 15, 30);
   }
 
-  // ÖĞRETMEN SAATLERİ (07:30, 07:50, 18:00) - İSİM EŞİTLENDİ
+  // ÖĞRETMEN FONKSİYONU
   static Future<void> ogretmenHatirlatmalariKur() async {
     await _alarmKur(201, "Balsuyu MTAL - Nöbetçi Öğretmen", "Servisi kontrol etmeniz gerekiyor. 📋", 7, 30);
     await _alarmKur(202, "Balsuyu MTAL - Servis Yoklama", "Servis işlemlerini tamamlamayı unutmayınız! ⚠️", 7, 50);
     await _alarmKur(203, "Balsuyu MTAL - Gün Sonu Kapanış", "İşlemleri tamamlamayı unutmayınız! 🏁", 18, 0);
   }
+
+  // Her ihtimale karşı yedek takma adlar (Hata payını sıfırlamak için):
+  static Future<void> ogretmenAlarmlariKur() async => ogretmenHatirlatmalariKur();
+  static Future<void> ogrenciAlarmlariKur() async => ogrenciHatirlatmalariKur();
 }
 class Ogrenci {
   final String id;
