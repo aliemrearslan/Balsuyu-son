@@ -5,31 +5,52 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Android için Java 17 Kurulumu
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # Flutter Kurulumu
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # EKSİK ANDROID ALTYAPISINI OTOMATİK OLUŞTURUR:
-      - run: flutter create . --platforms=android
-
+      - run: flutter create . --platforms=android,web
       - run: flutter pub get
-      - run: flutter build apk --release
 
-      # Üretilen APK'yı İndirilebilir Yap
+      # 1. Android APK Üretimi
+      - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
           name: balsuyu-servis-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      # 2. iPhone (Safari) Web Üretimi
+      - run: flutter build web --release --base-href "/balsuyu-son/"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
