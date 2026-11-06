@@ -110,7 +110,47 @@ class NobetciOgretmen {
   final String pin;
   NobetciOgretmen({required this.gun, required this.adSoyad, required this.pin});
 }
+// ---------------------------------------------------------------------------
+// ZAMAN VE SAAT KİLİDİ KONTROL MOTORU
+// ---------------------------------------------------------------------------
+class ServisZamanKontrolu {
+  // Sabah: 08:30'a kadar izin verilir
+  static bool get sabahIzinliMi {
+    final now = DateTime.now();
+    final dakika = now.hour * 60 + now.minute;
+    return dakika <= (8 * 60 + 30); // 08:30 veya öncesi
+  }
 
+  // Akşam: 15:00 ile 18:30 arasında izin verilir
+  static bool get aksamIzinliMi {
+    final now = DateTime.now();
+    final dakika = now.hour * 60 + now.minute;
+    final baslangic = 15 * 60; // 15:00
+    final bitis = 18 * 60 + 30; // 18:30
+    return dakika >= baslangic && dakika <= bitis;
+  }
+
+  // İşlem yapılabilir mi kontrolü (Engelse uyarı mesajı döner, serbestse null)
+  static String? kilitKontrolu(int adim) {
+    // 0: Sabah Biniş, 1: Sabah Okula İniş
+    if (adim == 0 || adim == 1) {
+      if (!sabahIzinliMi) {
+        return "⏰ Sabah biniş/iniş süresi 08:30'da dolmuştur! Sistem akşam 15:00'da açılacaktır.";
+      }
+    }
+    // 2: Akşam Okuldan Biniş, 3: Akşam Köyde İniş
+    else if (adim == 2 || adim == 3) {
+      final now = DateTime.now();
+      final dakika = now.hour * 60 + now.minute;
+      if (dakika < 15 * 60) {
+        return "⏰ Akşam servisi henüz başlamadı! Sistem saat 15:00'da açılacaktır.";
+      } else if (dakika > (18 * 60 + 30)) {
+        return "⏰ Akşam biniş/iniş süresi 18:30'da dolmuştur! Sistem kilitlidir.";
+      }
+    }
+    return null; // Her şey serbest
+  }
+}
 class Ogrenci {
   final String id;
   final String adSoyad;
@@ -1332,11 +1372,45 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     }
   }
 
-  void durumuDegistir(Ogrenci ogr, String yeniDurum, String plaka) {
+  // 4 ADIMLI AKILLI İŞLEM MOTORU (SABAH/AKŞAM AYRIMI)
+  void adimiIlerlet(Ogrenci ogr, String plaka) {
+    // --- SAAT KİLİDİ KONTROLÜ ---
+    final engelMesaji = ServisZamanKontrolu.kilitKontrolu(ogr.adim);
+    if (engelMesaji != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(backgroundColor: Colors.red.shade800, content: Text(engelMesaji)),
+      );
+      return; // Saat dışıysa işlemi durdur, Google'a gönderme!
+    }
+    // ---------------------------- 
+    
+    final now = DateTime.now();
+    final saatStr = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+
+    String islemMetni = "";
+    String yeniDurum = "";
+    int yeniAdim = ogr.adim + 1;
+
+    if (ogr.adim == 0) {
+      islemMetni = "SABAH BİNDİ";
+      yeniDurum = "serviste";
+    } else if (ogr.adim == 1) {
+      islemMetni = "SABAH İNDİ";
+      yeniDurum = "indi";
+    } else if (ogr.adim == 2) {
+      islemMetni = "AKŞAM BİNDİ";
+      yeniDurum = "serviste";
+    } else if (ogr.adim == 3) {
+      islemMetni = "AKŞAM İNDİ";
+      yeniDurum = "indi";
+    } else {
+      return;
+    }
+
     setState(() {
+      ogr.adim = yeniAdim;
       ogr.durum = yeniDurum;
-      final now = DateTime.now();
-      ogr.saat = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+      ogr.saat = saatStr;
     });
 
     googleTabloyaGonder(
@@ -1344,18 +1418,53 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
       koy: ogr.koyDurak,
       adSoyad: ogr.adSoyad,
       sinif: ogr.sinif,
-      islem: yeniDurum == 'serviste' ? 'BİNDİ' : 'İNDİ',
+      islem: islemMetni,
       yontem: 'Manuel (Öğretmen)',
-      ogretmen: seciliOgretmen?.adSoyad ?? "Bilinmiyor",
+      ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
     );
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         duration: const Duration(seconds: 2),
         backgroundColor: Colors.teal.shade800,
-        content: Text("${ogr.adSoyad} durumu güncellendi! ✅"),
+        content: Text("${ogr.adSoyad} için '$islemMetni' kaydedildi! ✅"),
       ),
     );
+  }
+
+  // YANLIŞ BASILIRSA VEYA TEST İÇİN SIFIRLAMA BUTONU (↺)
+  void adimiSifirla(Ogrenci ogr) {
+    setState(() {
+      ogr.adim = 0;
+      ogr.durum = 'binmedi';
+      ogr.saat = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("${ogr.adSoyad} durumu sıfırlandı.")),
+    );
+  }
+
+  // Öğrenci kartındaki durum rozeti
+  Widget _ogretmenDurumRozeti(Ogrenci ogr) {
+    if (ogr.adim == 1) {
+      return Text("🟢 1. Sabah Bindi: ${ogr.saat ?? ''}", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green));
+    } else if (ogr.adim == 2) {
+      return Text("🏫 2. Okula İndi: ${ogr.saat ?? ''}", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blue));
+    } else if (ogr.adim == 3) {
+      return Text("🚌 3. Akşam Bindi: ${ogr.saat ?? ''}", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange));
+    } else if (ogr.adim >= 4) {
+      return Text("🏡 4. Köyde İndi (Bitti ✅): ${ogr.saat ?? ''}", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.teal));
+    } else {
+      return const Text("⚪ Henüz Binmedi", style: TextStyle(fontSize: 10, color: Colors.grey));
+    }
+  }
+
+  String _siradakiButonMetni(int adim) {
+    if (adim == 0) return "1. Sabah Bindi";
+    if (adim == 1) return "2. Okula İndi";
+    if (adim == 2) return "3. Akşam Bindi";
+    if (adim == 3) return "4. Köyde İndi";
+    return "TAMAM ✅";
   }
 
   void raporPenceresiniAc() {
@@ -1735,28 +1844,48 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                                             Text(ogr.adSoyad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                             Text("${ogr.koyDurak} (No: ${ogr.id} - ${ogr.sinif})",
                                                 style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                            if (ogr.saat != null)
-                                              Text(
-                                                ogr.durum == 'serviste' ? "Biniş: ${ogr.saat}" : "İniş: ${ogr.saat}",
-                                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _durumRengi(ogr.durum)),
-                                              ),
+                                            const SizedBox(height: 2),
+                                            _ogretmenDurumRozeti(ogr), // <-- 4 AŞAMALI AKILLI ROZET
                                           ],
                                         ),
                                       ),
+                                      // SAĞ TARAF: 4 ADIMLI AKILLI BUTONLAR
                                       Row(
                                         children: [
-                                          if (ogr.durum == 'binmedi')
-                                            IconButton(
-                                              icon: const Icon(Icons.check_circle_outline, color: Colors.green, size: 24),
-                                              tooltip: 'Manuel Bindi',
-                                              onPressed: () => durumuDegistir(ogr, 'serviste', aktifServis.plaka),
+                                          // 1. Sıradaki Adım Butonu
+                                          if (ogr.adim < 4)
+                                            ElevatedButton(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: (ogr.adim % 2 == 0)
+                                                    ? Colors.green.shade700
+                                                    : Colors.blue.shade700,
+                                                foregroundColor: Colors.white,
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                minimumSize: const Size(60, 28),
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                              ),
+                                              onPressed: () => adimiIlerlet(ogr, aktifServis.plaka),
+                                              child: Text(
+                                                _siradakiButonMetni(ogr.adim),
+                                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                              ),
+                                            )
+                                          else
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                              decoration: BoxDecoration(color: Colors.teal.shade800, borderRadius: BorderRadius.circular(6)),
+                                              child: const Text("TAMAM ✅", style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                                             ),
-                                          if (ogr.durum == 'serviste')
+
+                                          // 2. Yanlış Basılırsa Geri Al / Başa Sar (↺)
+                                          if (ogr.adim > 0)
                                             IconButton(
-                                              icon: const Icon(Icons.logout, color: Colors.blue, size: 22),
-                                              tooltip: 'Manuel İndi',
-                                              onPressed: () => durumuDegistir(ogr, 'indi', aktifServis.plaka),
+                                              icon: const Icon(Icons.undo_rounded, size: 18, color: Colors.grey),
+                                              tooltip: 'Sıfırla / Başa Al',
+                                              onPressed: () => adimiSifirla(ogr),
                                             ),
+
+                                          // 3. Veliyi Ara Butonu
                                           IconButton(
                                             icon: const Icon(Icons.phone, color: Colors.teal, size: 20),
                                             tooltip: 'Veliyi Ara',
@@ -1950,7 +2079,15 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
 
   void nfcIslemYap(String islemTuru) {
     if (girisYapanOgrenci == null) return;
-
+// --- SAAT KİLİDİ KONTROLÜ ---
+    final engelMesaji = ServisZamanKontrolu.kilitKontrolu(gunlukIslemAdimi);
+    if (engelMesaji != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(backgroundColor: Colors.red.shade800, content: Text(engelMesaji)),
+      );
+      return; // Saat dışıysa öğrencinin binişini kaydetme!
+    }
+    // ----------------------------
     if (gunlukIslemAdimi >= 4) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Bugünkü tüm biniş/iniş haklarınızı tamamladınız! ✅")),
