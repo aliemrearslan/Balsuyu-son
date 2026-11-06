@@ -175,13 +175,12 @@ class BildirimServisi {
 
     await _plugin.initialize(settings);
 
-    // Android 13+ cihazlar için bildirim izni iste
+    // Android 13+ izin iste
     await _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
   }
 
-  // Belirli saatte her gün çalan alarm kurucu
   static Future<void> _alarmKur(int id, String baslik, String govde, int saat, int dakika) async {
     final now = tz.TZDateTime.now(tz.local);
     var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, saat, dakika);
@@ -205,19 +204,19 @@ class BildirimServisi {
       ),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time, // Her gün aynı saatte çalar
+      matchDateTimeComponents: DateTimeComponents.time,
     );
   }
 
-  // 1. ÖĞRENCİ SAATLERİ (07:10, 07:45, 15:30)
-  static Future<void> ogrenciAlarmlariKur() async {
+  // ÖĞRENCİ SAATLERİ (07:10, 07:45, 15:30)
+  static Future<void> ogrenciHatirlatmalariKur() async {
     await _alarmKur(101, "Balsuyu MTAL - Servis Biniş", "Servise bindiğinizi doğrulamanız gerekiyor! 🚌", 7, 10);
     await _alarmKur(102, "Balsuyu MTAL - Okula Varış", "Okula vardınız, servisten indiğinizi doğrulayınız! 🏫", 7, 45);
     await _alarmKur(103, "Balsuyu MTAL - Akşam Çıkış", "Servise binişinizi onaylamanız gerekiyor! 🎒", 15, 30);
   }
 
-  // 2. ÖĞRETMEN SAATLERİ (07:30, 07:50, 18:00)
-  static Future<void> ogretmenAlarmlariKur() async {
+  // ÖĞRETMEN SAATLERİ (07:30, 07:50, 18:00) - İSİM EŞİTLENDİ
+  static Future<void> ogretmenHatirlatmalariKur() async {
     await _alarmKur(201, "Balsuyu MTAL - Nöbetçi Öğretmen", "Servisi kontrol etmeniz gerekiyor. 📋", 7, 30);
     await _alarmKur(202, "Balsuyu MTAL - Servis Yoklama", "Servis işlemlerini tamamlamayı unutmayınız! ⚠️", 7, 50);
     await _alarmKur(203, "Balsuyu MTAL - Gün Sonu Kapanış", "İşlemleri tamamlamayı unutmayınız! 🏁", 18, 0);
@@ -2176,6 +2175,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       await prefs.setString('balsuyu_ogr_sifre', bulunanOgrenci.sifre);
 
       setState(() => girisYapanOgrenci = bulunanOgrenci);
+      BildirimServisi.ogrenciHatirlatmalariKur();
       servisBilgisiniBul();
       await gunlukAdimiYukle(bulunanOgrenci.id);
 
