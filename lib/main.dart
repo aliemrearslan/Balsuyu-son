@@ -52,9 +52,7 @@ Future<void> googleTabloyaGonder({
       Uri.parse(googleTabloWebhookUrl),
       body: veriPaketi,
     );
-  } catch (e) {
-    // Tarayıcı ve ağ yönlendirmelerini yönetir
-  }
+  } catch (_) {}
 }
 
 String getBugununGunu() {
@@ -65,7 +63,6 @@ String getBugununGunu() {
 
 String normalizePlaka(String s) => s.replaceAll(' ', '').toUpperCase().trim();
 
-// Telefon numaralarını boşluksuz ve başında 0 olmadan eşitleyen fonksiyon
 String normalizeTel(String t) {
   final clean = t.replaceAll(RegExp(r'[^0-9]'), '');
   return clean.startsWith('0') ? clean.substring(1) : clean;
@@ -157,7 +154,7 @@ class ServisHatti {
 }
 
 // ---------------------------------------------------------------------------
-// ANA UYGULAMA YAPISI (ÖĞRENCİ - VELİ - ŞOFÖR - ÖĞRETMEN)
+// ANA UYGULAMA YAPISI (4 SEKMELİ)
 // ---------------------------------------------------------------------------
 class BalsuyuServisApp extends StatelessWidget {
   const BalsuyuServisApp({super.key});
@@ -206,7 +203,6 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
       if (response.statusCode == 200) {
         final hamVeri = jsonDecode(response.body);
 
-        // 1. Nöbetçiler
         final List<NobetciOgretmen> yuklenenNobetciler = [];
         if (hamVeri['nobetciler'] != null) {
           for (var item in hamVeri['nobetciler']) {
@@ -228,7 +224,6 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
           bugununNobetcisi = yuklenenNobetciler.isNotEmpty ? yuklenenNobetciler.first : null;
         }
 
-        // 2. Öğrenciler
         final List<Ogrenci> yuklenenOgrenciler = [];
         if (hamVeri['ogrenciler'] != null) {
           for (var item in hamVeri['ogrenciler']) {
@@ -244,7 +239,6 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
           }
         }
 
-        // 3. Servisler
         final List<ServisHatti> yuklenenServisler = [];
         if (hamVeri['servisler'] != null) {
           for (var item in hamVeri['servisler']) {
@@ -338,7 +332,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
       );
     }
 
-    // 4 SEKMELİ YÖNETİM
+    // 4 SEKMELİ SAYFA LİSTESİ
     final sayfalar = [
       OgrenciNfcEkrani(
         aktifNobetci: aktifNobetci,
@@ -368,7 +362,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
       body: sayfalar[aktifSayfa],
       bottomNavigationBar: NavigationBar(
         selectedIndex: aktifSayfa,
-        height: 64,
+        height: 62,
         backgroundColor: Colors.white,
         elevation: 4,
         onDestinationSelected: (index) {
@@ -402,7 +396,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
 }
 
 // ---------------------------------------------------------------------------
-// 1. EKRAN: VELİ TAKİP PANELİ (KVKK UYUMLU)
+// 1. EKRAN: VELİ TAKİP PANELİ (ZAMAN ÇİZELGELİ / KVKK UYUMLU)
 // ---------------------------------------------------------------------------
 class VeliPaneli extends StatefulWidget {
   final List<Ogrenci> tumOgrenciler;
@@ -706,9 +700,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 14),
-
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -734,18 +726,14 @@ class _VeliPaneliState extends State<VeliPaneli> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 14),
-
               const Text("Günün Servis Yolculuk Çizelgesi", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
               const SizedBox(height: 8),
               _zamanCizelgesiSatiri("1. Sabah Köyden Biniş", "Öğrenci köy durağından servise bindi.", gunlukIslemAdimi > 0),
               _zamanCizelgesiSatiri("2. Sabah Okula Varış", "Öğrenci okula sağ salim ulaştı, derste.", gunlukIslemAdimi > 1),
               _zamanCizelgesiSatiri("3. Akşam Okuldan Çıkış", "Öğrenci okul çıkışı servise bindi, köye geliyor.", gunlukIslemAdimi > 2),
               _zamanCizelgesiSatiri("4. Akşam Köye Varış", "Öğrenci köy durağında indi, eve ulaştı.", gunlukIslemAdimi > 3),
-
               const SizedBox(height: 14),
-
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -794,7 +782,6 @@ class _VeliPaneliState extends State<VeliPaneli> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 20),
               arslanogluGroupFooter(),
             ],
@@ -1248,7 +1235,7 @@ class _SoforPaneliState extends State<SoforPaneli> {
 }
 
 // ---------------------------------------------------------------------------
-// 3. EKRAN: ÖĞRETMEN CANLI TAKİP PANELİ
+// 3. EKRAN: ÖĞRETMEN CANLI TAKİP PANELİ (WHATSAPP RAPORLU & GÜZERGAHLI)
 // ---------------------------------------------------------------------------
 class OgretmenPaneli extends StatefulWidget {
   final List<ServisHatti> servisler;
@@ -2277,7 +2264,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   Widget _adimRozeti(String adimAdi, bool tamamlandi, bool aktif) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.vertical(4),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         decoration: BoxDecoration(
           color: tamamlandi
               ? Colors.teal.shade900
