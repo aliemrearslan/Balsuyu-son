@@ -221,6 +221,10 @@ class BildirimServisi {
     await _alarmKur(203, "Balsuyu MTAL - Gün Sonu Kapanış", "İşlemleri tamamlamayı unutmayınız! 🏁", 18, 0);
   }
 
+  // 2097 VE 2164. SATIRLARDAKİ ÇAĞRI İÇİN KÖPRÜ:
+  static Future<void> ogrenciAlarmlariKur() async {
+    await ogrenciHatirlatmalariKur();
+  }
   // Her ihtimale karşı yedek takma adlar (Hata payını sıfırlamak için):
   static Future<void> ogretmenAlarmlariKur() async => ogretmenHatirlatmalariKur();
   static Future<void> ogrenciAlarmlariKur() async => ogrenciHatirlatmalariKur();
