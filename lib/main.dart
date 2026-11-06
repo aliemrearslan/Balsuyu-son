@@ -4,7 +4,11 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
-void main() {
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await BildirimServisi.baslat(); // Bildirim motorunu başlat
   runApp(const BalsuyuServisApp());
 }
 
@@ -149,6 +153,74 @@ class ServisZamanKontrolu {
       }
     }
     return null; // Her şey serbest
+  }
+}
+// ---------------------------------------------------------------------------
+// SAATLİ BİLDİRİM VE ALARM SERVİSİ
+// ---------------------------------------------------------------------------
+class BildirimServisi {
+  static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+
+  static Future<void> baslat() async {
+    tz.initializeTimeZones();
+    try {
+      tz.setLocalLocation(tz.getLocation('Europe/Istanbul'));
+    } catch (_) {}
+
+    const AndroidInitializationSettings androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const InitializationSettings settings =
+        InitializationSettings(android: androidSettings);
+
+    await _plugin.initialize(settings);
+
+    // Android 13+ cihazlar için bildirim izni iste
+    await _plugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
+  }
+
+  // Belirli saatte her gün çalan alarm kurucu
+  static Future<void> _alarmKur(int id, String baslik, String govde, int saat, int dakika) async {
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, saat, dakika);
+    if (scheduled.isBefore(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+
+    await _plugin.zonedSchedule(
+      id,
+      baslik,
+      govde,
+      scheduled,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'servis_hatirlatici_kanali',
+          'Servis Hatırlatıcıları',
+          importance: Importance.max,
+          priority: Priority.high,
+          playSound: true,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.time, // Her gün aynı saatte çalar
+    );
+  }
+
+  // 1. ÖĞRENCİ SAATLERİ (07:10, 07:45, 15:30)
+  static Future<void> ogrenciAlarmlariKur() async {
+    await _alarmKur(101, "Balsuyu MTAL - Servis Biniş", "Servise bindiğinizi doğrulamanız gerekiyor! 🚌", 7, 10);
+    await _alarmKur(102, "Balsuyu MTAL - Okula Varış", "Okula vardınız, servisten indiğinizi doğrulayınız! 🏫", 7, 45);
+    await _alarmKur(103, "Balsuyu MTAL - Akşam Çıkış", "Servise binişinizi onaylamanız gerekiyor! 🎒", 15, 30);
+  }
+
+  // 2. ÖĞRETMEN SAATLERİ (07:30, 07:50, 18:00)
+  static Future<void> ogretmenAlarmlariKur() async {
+    await _alarmKur(201, "Balsuyu MTAL - Nöbetçi Öğretmen", "Servisi kontrol etmeniz gerekiyor. 📋", 7, 30);
+    await _alarmKur(202, "Balsuyu MTAL - Servis Yoklama", "Servis işlemlerini tamamlamayı unutmayınız! ⚠️", 7, 50);
+    await _alarmKur(203, "Balsuyu MTAL - Gün Sonu Kapanış", "İşlemleri tamamlamayı unutmayınız! 🏁", 18, 0);
   }
 }
 class Ogrenci {
@@ -1353,12 +1425,51 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
   void initState() {
     super.initState();
     seciliOgretmen = widget.varsayilanNobetci;
+    // Cihaza daha önce giriş yapmış öğretmeni otomatik hatırla:
+    kayitliOgretmeniYukle();
+      BildirimServisi.ogretmenHatirlatmalariKur();
   }
 
-  void pinKontrolEt() {
-    if (seciliOgretmen == null) return;
+  @override
+  void didUpdateWidget(covariant OgretmenPaneli oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Tablo verileri yenilendiğinde kayıtlı öğretmen varsa girişi açık tut:
+    if (!girisYapildi && widget.nobetciler.isNotEmpty) {
+      kayitliOgretmeniYukle();
+    }
+  }
 
+  // CİHAZA KAYITLI ÖĞRETMENİ OTOMATİK GİRİŞ YAPTIRAN FONKSİYON
+  Future<void> kayitliOgretmeniYukle() async {
+    final prefs = await SharedPreferences.getInstance();
+    final kayitliPin = prefs.getString('balsuyu_ogretmen_pin');
+
+    if (kayitliPin != null && widget.nobetciler.isNotEmpty) {
+      try {
+        final bulunan = widget.nobetciler.firstWhere(
+          (n) => n.pin.trim() == kayitliPin.trim(),
+        );
+        if (mounted) {
+          setState(() {
+            seciliOgretmen = bulunan;
+            girisYapildi = true; // Şifre sormadan paneli doğrudan aç
+          });
+          widget.onNobetciGuncellendi(bulunan);
+        }
+      } catch (_) {}
+    }
+  }
+
+  // ÖĞRETMEN GİRİŞ YAPTIĞINDA CİHAZA KAYDET
+  Future<void> pinKontrolEt() async {
+    BildirimServisi.ogretmenHatirlatmalariKur();
+    if (seciliOgretmen == null) return;
     if (pinController.text.trim() == seciliOgretmen!.pin.trim()) {
+      final prefs = await SharedPreferences.getInstance();
+      // Öğretmenin PIN'ini telefonun hafızasına kilitliyoruz:
+      await prefs.setString('balsuyu_ogretmen_pin', seciliOgretmen!.pin.trim());
+      await prefs.setString('balsuyu_ogretmen_ad', seciliOgretmen!.adSoyad.trim());
+
       setState(() => girisYapildi = true);
       widget.onNobetciGuncellendi(seciliOgretmen!);
       pinController.clear();
@@ -1370,6 +1481,17 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
         ),
       );
     }
+  }
+
+  // ÖĞRETMEN ÇIKIŞ YAPTIĞINDA CİHAZ HAFIZASINI TEMİZLE
+  Future<void> ogretmenCikisYap() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('balsuyu_ogretmen_pin');
+    await prefs.remove('balsuyu_ogretmen_ad');
+    setState(() {
+      girisYapildi = false;
+      pinController.clear();
+    });
   }
 
   // 4 ADIMLI AKILLI İŞLEM MOTORU (SABAH/AKŞAM AYRIMI)
@@ -1713,7 +1835,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
           IconButton(
             icon: const Icon(Icons.logout_rounded, size: 20),
             tooltip: 'Çıkış',
-            onPressed: () => setState(() => girisYapildi = false),
+            onPressed: ogretmenCikisYap,
           ),
           const SizedBox(width: 4),
         ],
@@ -1973,6 +2095,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   void initState() {
     super.initState();
     kayitliOgrenciyiYukle();
+    BildirimServisi.ogrenciAlarmlariKur();
   }
 
   @override
@@ -2039,6 +2162,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   }
 
   Future<void> ogrenciGirisYap() async {
+    BildirimServisi.ogrenciAlarmlariKur();
     final girilenNo = noController.text.trim();
     final girilenSifre = sifreController.text.trim();
 
