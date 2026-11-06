@@ -198,11 +198,13 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
   }
 
   Future<void> verileriGoogleTablodanCek() async {
+
     try {
       final response = await http.get(Uri.parse(googleTabloWebhookUrl));
       if (response.statusCode == 200) {
         final hamVeri = jsonDecode(response.body);
 
+        // 1. Nöbetçiler
         final List<NobetciOgretmen> yuklenenNobetciler = [];
         if (hamVeri['nobetciler'] != null) {
           for (var item in hamVeri['nobetciler']) {
@@ -224,22 +226,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
           bugununNobetcisi = yuklenenNobetciler.isNotEmpty ? yuklenenNobetciler.first : null;
         }
 
-        final List<Ogrenci> yuklenenOgrenciler = [];
-        if (hamVeri['ogrenciler'] != null) {
-          for (var item in hamVeri['ogrenciler']) {
-            yuklenenOgrenciler.add(Ogrenci(
-              id: item['okulNo'].toString().trim(),
-              adSoyad: item['adSoyad'].toString().trim(),
-              sinif: item['sinif'].toString().trim(),
-              koyDurak: item['koyDurak'].toString().trim(),
-              plaka: item['plaka'].toString().trim(),
-              veliTel: item['veliTel'] != null ? item['veliTel'].toString().trim() : "-",
-              sifre: item['sifre'] != null ? item['sifre'].toString().trim() : "",
-            ));
-          }
-        }
-
-        // 2. Öğrenciler
+        // 2. Öğrenciler (Tek ve temiz liste)
         final List<Ogrenci> yuklenenOgrenciler = [];
         if (hamVeri['ogrenciler'] != null) {
           for (var item in hamVeri['ogrenciler']) {
@@ -255,6 +242,26 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
                   ? item['durum'].toString().trim()
                   : 'binmedi',
               saat: item['saat']?.toString().trim(),
+            ));
+          }
+        }
+
+        // 3. Servisler
+        final List<ServisHatti> yuklenenServisler = [];
+        if (hamVeri['servisler'] != null) {
+          for (var item in hamVeri['servisler']) {
+            final plaka = item['plaka'].toString().trim();
+            final oServisinOgrencileri = yuklenenOgrenciler
+                .where((o) => normalizePlaka(o.plaka) == normalizePlaka(plaka))
+                .toList();
+
+            yuklenenServisler.add(ServisHatti(
+              plaka: plaka,
+              hatAdi: item['hatAdi'].toString().trim(),
+              guzergah: item['guzergah'].toString().trim(),
+              soforAdi: item['soforAdi'].toString().trim(),
+              soforTel: item['soforTel'].toString().trim(),
+              ogrenciler: oServisinOgrencileri,
             ));
           }
         }
@@ -866,6 +873,21 @@ class _VeliPaneliState extends State<VeliPaneli> {
 // ---------------------------------------------------------------------------
 // 2. EKRAN: SERVİS ŞOFÖRÜ TAKİP PANELİ (SALT OKUNUR - KVKK UYUMLU)
 // ---------------------------------------------------------------------------
+// ŞOFÖR PANELİ ANA WIDGET TANIMI
+// ---------------------------------------------------------------------------
+class SoforPaneli extends StatefulWidget {
+  final List<ServisHatti> servisler;
+  final Future<void> Function() onYenile;
+
+  const SoforPaneli({
+    super.key,
+    required this.servisler,
+    required this.onYenile,
+  });
+
+  @override
+  State<SoforPaneli> createState() => _SoforPaneliState();
+}
 class _SoforPaneliState extends State<SoforPaneli> {
   ServisHatti? soforServisi;
   final TextEditingController telController = TextEditingController();
