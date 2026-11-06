@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-
+import 'dart:async';
 void main() {
   runApp(const BalsuyuServisApp());
 }
@@ -239,21 +239,22 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
           }
         }
 
-        final List<ServisHatti> yuklenenServisler = [];
-        if (hamVeri['servisler'] != null) {
-          for (var item in hamVeri['servisler']) {
-            final plaka = item['plaka'].toString().trim();
-            final oServisinOgrencileri = yuklenenOgrenciler
-                .where((o) => normalizePlaka(o.plaka) == normalizePlaka(plaka))
-                .toList();
-
-            yuklenenServisler.add(ServisHatti(
-              plaka: plaka,
-              hatAdi: item['hatAdi'].toString().trim(),
-              guzergah: item['guzergah'].toString().trim(),
-              soforAdi: item['soforAdi'].toString().trim(),
-              soforTel: item['soforTel'].toString().trim(),
-              ogrenciler: oServisinOgrencileri,
+        // 2. Öğrenciler
+        final List<Ogrenci> yuklenenOgrenciler = [];
+        if (hamVeri['ogrenciler'] != null) {
+          for (var item in hamVeri['ogrenciler']) {
+            yuklenenOgrenciler.add(Ogrenci(
+              id: item['okulNo'].toString().trim(),
+              adSoyad: item['adSoyad'].toString().trim(),
+              sinif: item['sinif'].toString().trim(),
+              koyDurak: item['koyDurak'].toString().trim(),
+              plaka: item['plaka'].toString().trim(),
+              veliTel: item['veliTel'] != null ? item['veliTel'].toString().trim() : "-",
+              sifre: item['sifre'] != null ? item['sifre'].toString().trim() : "",
+              durum: (item['durum'] != null && item['durum'].toString().isNotEmpty)
+                  ? item['durum'].toString().trim()
+                  : 'binmedi',
+              saat: item['saat']?.toString().trim(),
             ));
           }
         }
@@ -865,28 +866,38 @@ class _VeliPaneliState extends State<VeliPaneli> {
 // ---------------------------------------------------------------------------
 // 2. EKRAN: SERVİS ŞOFÖRÜ TAKİP PANELİ (SALT OKUNUR - KVKK UYUMLU)
 // ---------------------------------------------------------------------------
-class SoforPaneli extends StatefulWidget {
-  final List<ServisHatti> servisler;
-  final Future<void> Function() onYenile;
-
-  const SoforPaneli({
-    super.key,
-    required this.servisler,
-    required this.onYenile,
-  });
-
-  @override
-  State<SoforPaneli> createState() => _SoforPaneliState();
-}
-
 class _SoforPaneliState extends State<SoforPaneli> {
   ServisHatti? soforServisi;
   final TextEditingController telController = TextEditingController();
+  Timer? otoYenileyici;
 
   @override
   void initState() {
     super.initState();
     kayitliSoforuYukle();
+
+    // Şoför araba kullanırken her 10 saniyede bir tabloyu kontrol eder (Canlı Takip)
+    otoYenileyici = Timer.periodic(const Duration(seconds: 10), (timer) {
+      if (mounted && soforServisi != null) {
+        widget.onYenile().then((_) {
+          if (mounted) kayitliSoforuYukle();
+        });
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant SoforPaneli oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sekmeler arası geçişte veya veri yenilendiğinde şoför ekranını anında günceller
+    kayitliSoforuYukle();
+  }
+
+  @override
+  void dispose() {
+    otoYenileyici?.cancel();
+    telController.dispose();
+    super.dispose();
   }
 
   Future<void> kayitliSoforuYukle() async {
@@ -898,7 +909,11 @@ class _SoforPaneliState extends State<SoforPaneli> {
         final bulunan = widget.servisler.firstWhere(
           (s) => normalizeTel(s.soforTel) == normalizeTel(kayitliTel),
         );
-        if (mounted) setState(() => soforServisi = bulunan);
+        if (mounted) {
+          setState(() {
+            soforServisi = bulunan;
+          });
+        }
       } catch (_) {}
     }
   }
