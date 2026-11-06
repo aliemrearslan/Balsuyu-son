@@ -227,7 +227,6 @@ class BildirimServisi {
   }
   // Her ihtimale karşı yedek takma adlar (Hata payını sıfırlamak için):
   static Future<void> ogretmenAlarmlariKur() async => ogretmenHatirlatmalariKur();
-  static Future<void> ogrenciAlarmlariKur() async => ogrenciHatirlatmalariKur();
 }
 class Ogrenci {
   final String id;
