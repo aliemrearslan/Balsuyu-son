@@ -10,11 +10,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Android için Java 17 Kurulumu
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Flutter Kurulumu
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+
+      # EKSİK ANDROID ALTYAPISINI OTOMATİK OLUŞTURUR:
+      - run: flutter create . --platforms=android
+
       - run: flutter pub get
       - run: flutter build apk --release
+
+      # Üretilen APK'yı İndirilebilir Yap
       - uses: actions/upload-artifact@v4
         with:
           name: balsuyu-servis-apk
