@@ -40,7 +40,7 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
 
       # 2. iPhone (Safari) Web Üretimi
-      - run: flutter build web --release --base-href "/balsuyu-son/"
+      - run: flutter build web --release --base-href "/Balsuyu-son/"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
