@@ -31,15 +31,46 @@ jobs:
 
       - run: flutter create . --platforms=android,web
 
-      # ANDROID İNTERNET İZNİ EKLEME (VERİ HATASINI ÇÖZEN ADIM)
+      # ANDROID İZİNLERİ VE BİLDİRİM (DESUGARING) AYARINI OTOMATİK AÇAR:
       - run: |
           python3 -c "
-          path = 'android/app/src/main/AndroidManifest.xml'
-          with open(path, 'r') as f:
-              content = f.read()
-          content = content.replace('<application', '<uses-permission android:name=\"android.permission.INTERNET\"/>\n    <application')
-          with open(path, 'w') as f:
-              f.write(content)
+          import os
+
+          # 1. Bildirim ve İnternet İzinlerini Ekle
+          m_path = 'android/app/src/main/AndroidManifest.xml'
+          if os.path.exists(m_path):
+              with open(m_path, 'r') as f:
+                  m = f.read()
+              perms = '''
+              <uses-permission android:name=\"android.permission.INTERNET\"/>
+              <uses-permission android:name=\"android.permission.VIBRATE\"/>
+              <uses-permission android:name=\"android.permission.RECEIVE_BOOT_COMPLETED\"/>
+              <uses-permission android:name=\"android.permission.SCHEDULE_EXACT_ALARM\"/>
+              <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\"/>
+              <application'''
+              m = m.replace('<application', perms)
+              with open(m_path, 'w') as f:
+                  f.write(m)
+
+          # 2. Desugaring (Java 8 Zaman Desteği) Ayarını Aç
+          g_path = 'android/app/build.gradle' if os.path.exists('android/app/build.gradle') else ('android/app/build.gradle.kts' if os.path.exists('android/app/build.gradle.kts') else None)
+          if g_path:
+              with open(g_path, 'r') as f:
+                  g = f.read()
+              if 'build.gradle.kts' in g_path:
+                  g = g.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true')
+                  if 'dependencies {' in g:
+                      g = g.replace('dependencies {', 'dependencies {\n    coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.0.4\")')
+                  else:
+                      g += '\ndependencies {\n    coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.0.4\")\n}\n'
+              else:
+                  g = g.replace('compileOptions {', 'compileOptions {\n        coreLibraryDesugaringEnabled true')
+                  if 'dependencies {' in g:
+                      g = g.replace('dependencies {', \"dependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'\")
+                  else:
+                      g += \"\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'\n}\n\"
+              with open(g_path, 'w') as f:
+                  f.write(g)
           "
 
       - run: flutter pub get
@@ -51,7 +82,7 @@ jobs:
           name: balsuyu-servis-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
-      # 2. iPhone Web (Büyük B Harfi ile)
+      # 2. iPhone Web
       - run: flutter build web --release --base-href "/Balsuyu-son/"
       - uses: actions/upload-pages-artifact@v3
         with:
