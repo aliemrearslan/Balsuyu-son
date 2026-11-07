@@ -12,7 +12,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (!kIsWeb) {
-  await BildirimServisi.baslat(); // Bildirim motorunu başlat
+  await BildirimServisi.baslat(); 
+  }
   runApp(const BalsuyuServisApp());
 }
 
