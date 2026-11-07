@@ -2207,7 +2207,41 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   }
 
   Future<void> ogrenciCikisYap() async {
-    // 🚨 ACİL DURUM SEÇİM PENCERESİ (2 NET BUTON)
+    // 1. ÖNCE BU GELECEK: İDAREYE ALARM GÖNDERME
+  void yonetimeAcilBildir() {
+    if (girisYapanOgrenci == null) return;
+
+    googleTabloyaGonder(
+      plaka: girisYapanOgrenci!.plaka,
+      koy: girisYapanOgrenci!.koyDurak,
+      adSoyad: girisYapanOgrenci!.adSoyad,
+      sinif: girisYapanOgrenci!.sinif,
+      islem: "ACİL_DURUM",
+      yontem: "Öğrenci SOS",
+      ogretmen: widget.aktifNobetci?.adSoyad ?? "İdare",
+    );
+
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text("İhbar İletildi ✅", style: TextStyle(color: Colors.greenAccent, fontSize: 16)),
+        content: const Text(
+          "Acil durum çağrınız Okul Yönetimine ve Nöbetçi Öğretmene anında iletildi.\n\nLütfen sakin olun, araçtan ayrılmayın. Yönetim sizinle derhal iletişime geçecektir.",
+          style: TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text("ANLADIM", style: TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 2. SONRA BU GELECEK: ACİL DURUM BUTONLARI PENCERESİ
   void acilDurumPenceresiAc() {
     showModalBottomSheet(
       context: context,
@@ -2251,7 +2285,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
             ),
             const SizedBox(height: 12),
 
-            // BUTON 2: OKUL YÖNETİMİNE BİLDİR (Müdürün numarası görünmez!)
+            // BUTON 2: OKUL YÖNETİMİNE BİLDİR
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.amber.shade800,
@@ -2269,40 +2303,6 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
             const SizedBox(height: 10),
           ],
         ),
-      ),
-    );
-  }
-
-  void yonetimeAcilBildir() {
-    if (girisYapanOgrenci == null) return;
-
-    // Google E-Tabloya ve Ayarlar'daki E-postalara acil alarm gönder:
-    googleTabloyaGonder(
-      plaka: girisYapanOgrenci!.plaka,
-      koy: girisYapanOgrenci!.koyDurak,
-      adSoyad: girisYapanOgrenci!.adSoyad,
-      sinif: girisYapanOgrenci!.sinif,
-      islem: "ACİL_DURUM",
-      yontem: "Öğrenci SOS",
-      ogretmen: widget.aktifNobetci?.adSoyad ?? "İdare",
-    );
-
-    showDialog(
-      context: context,
-      builder: (c) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text("İhbar İletildi ✅", style: TextStyle(color: Colors.greenAccent, fontSize: 16)),
-        content: const Text(
-          "Acil durum çağrınız Okul Yönetimine ve Nöbetçi Öğretmene anında iletildi.\n\nLütfen sakin olun, araçtan ayrılmayın. Yönetim sizinle derhal iletişime geçecektir.",
-          style: TextStyle(color: Colors.white70, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text("ANLADIM", style: TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold)),
-          ),
-        ],
       ),
     );
   }
