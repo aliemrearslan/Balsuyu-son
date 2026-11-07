@@ -2206,8 +2206,17 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
     }
   }
 
-  Future<void> ogrenciCikisYap() async {
-    // 1. ÖNCE BU GELECEK: İDAREYE ALARM GÖNDERME
+Future<void> ogrenciCikisYap() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('balsuyu_ogr_no');
+    await prefs.remove('balsuyu_ogr_sifre');
+    setState(() {
+      girisYapanOgrenci = null;
+      ogrenciServisi = null;
+    });
+  }
+
+  // 1. İDAREYE ALARM GÖNDERME
   void yonetimeAcilBildir() {
     if (girisYapanOgrenci == null) return;
 
@@ -2241,7 +2250,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
     );
   }
 
-  // 2. SONRA BU GELECEK: ACİL DURUM BUTONLARI PENCERESİ
+  // 2. ACİL DURUM BUTONLARI PENCERESİ
   void acilDurumPenceresiAc() {
     showModalBottomSheet(
       context: context,
@@ -2306,15 +2315,6 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       ),
     );
   }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('balsuyu_ogr_no');
-    await prefs.remove('balsuyu_ogr_sifre');
-    setState(() {
-      girisYapanOgrenci = null;
-      ogrenciServisi = null;
-    });
-  }
-
   void nfcIslemYap(String islemTuru) {
     if (girisYapanOgrenci == null) return;
 // --- SAAT KİLİDİ KONTROLÜ ---
