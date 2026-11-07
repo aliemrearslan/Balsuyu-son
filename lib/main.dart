@@ -1,13 +1,17 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;void main() async {
+import 'package:timezone/timezone.dart' as tz;
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (!kIsWeb) {
   await BildirimServisi.baslat(); // Bildirim motorunu başlat
   runApp(const BalsuyuServisApp());
 }
@@ -160,8 +164,10 @@ class ServisZamanKontrolu {
 // ---------------------------------------------------------------------------
 class BildirimServisi {
   static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
-
-  static Future<void> baslat() async {
+  static Future<void> baslat() async{ 
+    
+    if (kIsWeb) return; 
+    
     tz.initializeTimeZones();
     try {
       tz.setLocalLocation(tz.getLocation('Europe/Istanbul'));
@@ -181,6 +187,8 @@ class BildirimServisi {
   }
 
   static Future<void> _alarmKur(int id, String baslik, String govde, int saat, int dakika) async {
+    if (kIsWeb) return;
+    
     final now = tz.TZDateTime.now(tz.local);
     var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, saat, dakika);
     if (scheduled.isBefore(now)) {
