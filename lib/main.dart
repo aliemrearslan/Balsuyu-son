@@ -2207,6 +2207,105 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   }
 
   Future<void> ogrenciCikisYap() async {
+    // 🚨 ACİL DURUM SEÇİM PENCERESİ (2 NET BUTON)
+  void acilDurumPenceresiAc() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.red.shade400, borderRadius: BorderRadius.circular(10))),
+            const SizedBox(height: 16),
+            const Text(
+              "🚨 ACİL DURUM MERKEZİ",
+              style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Güvenliğiniz için lütfen durumunuza uygun butona basınız.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 20),
+
+            // BUTON 1: 112 ACİL ÇAĞRI
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade800,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.phone_in_talk, size: 20),
+              label: const Text("112 ACİL ÇAĞRI'YI ARA (Polis / Ambulans)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+              onPressed: () {
+                Navigator.pop(ctx);
+                telefonlaAra(context, "112");
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // BUTON 2: OKUL YÖNETİMİNE BİLDİR (Müdürün numarası görünmez!)
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber.shade800,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.notifications_active_rounded, size: 20),
+              label: const Text("OKUL YÖNETİMİNE ACİL DURUM BİLDİR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+              onPressed: () {
+                Navigator.pop(ctx);
+                yonetimeAcilBildir();
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void yonetimeAcilBildir() {
+    if (girisYapanOgrenci == null) return;
+
+    // Google E-Tabloya ve Ayarlar'daki E-postalara acil alarm gönder:
+    googleTabloyaGonder(
+      plaka: girisYapanOgrenci!.plaka,
+      koy: girisYapanOgrenci!.koyDurak,
+      adSoyad: girisYapanOgrenci!.adSoyad,
+      sinif: girisYapanOgrenci!.sinif,
+      islem: "ACİL_DURUM",
+      yontem: "Öğrenci SOS",
+      ogretmen: widget.aktifNobetci?.adSoyad ?? "İdare",
+    );
+
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text("İhbar İletildi ✅", style: TextStyle(color: Colors.greenAccent, fontSize: 16)),
+        content: const Text(
+          "Acil durum çağrınız Okul Yönetimine ve Nöbetçi Öğretmene anında iletildi.\n\nLütfen sakin olun, araçtan ayrılmayın. Yönetim sizinle derhal iletişime geçecektir.",
+          style: TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text("ANLADIM", style: TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('balsuyu_ogr_no');
     await prefs.remove('balsuyu_ogr_sifre');
@@ -2401,6 +2500,19 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
                             ],
                           ),
                         ),
+                        // 🚨 KIRMIZI SOS BUTONU:
+ElevatedButton(
+  style: ElevatedButton.styleFrom(
+    backgroundColor: Colors.red.shade700,
+    foregroundColor: Colors.white,
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    minimumSize: const Size(50, 30),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  ),
+  onPressed: acilDurumPenceresiAc,
+  child: const Text("🚨 SOS", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+),
+const SizedBox(width: 4),
                         IconButton(
                           icon: const Icon(Icons.logout, color: Colors.white60, size: 18),
                           tooltip: 'Çıkış Yap',
