@@ -96,6 +96,67 @@ Future<void> telefonlaAra(BuildContext context, String tel) async {
     );
     return;
   }
+  // 📞 AKILLI ARAMA PENCERESİ (Öğrenci tel boşsa direkt veliyi arar, doluysa sorar)
+void akilliAramaPenceresi(BuildContext context, String adSoyad, String veliTel, String ogrenciTel) {
+  final temizOgrTel = ogrenciTel.trim();
+
+  // Öğrenci telefonu yoksa (Ortaokul): Direkt veliyi ara!
+  if (temizOgrTel.isEmpty || temizOgrTel == "-" || temizOgrTel == "null") {
+    telefonlaAra(context, veliTel);
+    return;
+  }
+
+  // Öğrenci telefonu varsa (Lise): 2 seçenekli pencere aç!
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: const Color(0xFF1E293B),
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(10))),
+          const SizedBox(height: 14),
+          Text("$adSoyad İletişim", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 6),
+          const Text("Kimi aramak istiyorsunuz?", style: TextStyle(color: Colors.grey, fontSize: 12)),
+          const SizedBox(height: 18),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal.shade700,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 48),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.phone_android_rounded),
+            label: Text("📱 Öğrenciyi Ara ($temizOgrTel)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              telefonlaAra(context, temizOgrTel);
+            },
+          ),
+          const SizedBox(height: 10),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade700,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 48),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.family_restroom_rounded),
+            label: Text("👨‍👩‍👦 Veliyi Ara ($veliTel)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              telefonlaAra(context, veliTel);
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+}
   final uri = Uri.parse("tel:$cleanTel");
   try {
     if (await canLaunchUrl(uri)) {
@@ -244,6 +305,7 @@ class Ogrenci {
   final String koyDurak;
   final String plaka;
   final String veliTel;
+  final String ogrenciTel; // <-- EKLENDİ
   final String sifre;
   String durum;
   int adim;
@@ -256,6 +318,7 @@ class Ogrenci {
     required this.koyDurak,
     required this.plaka,
     required this.veliTel,
+    this.ogrenciTel = "", // <-- EKLENDİ
     required this.sifre,
     this.durum = 'binmedi',
     this.adim = 0,
@@ -365,6 +428,7 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
               koyDurak: item['koyDurak'].toString().trim(),
               plaka: item['plaka'].toString().trim(),
               veliTel: item['veliTel'] != null ? item['veliTel'].toString().trim() : "-",
+              ogrenciTel: item['ogrenciTel'] != null ? item['ogrenciTel'].toString().trim() : "",
               sifre: item['sifre'] != null ? item['sifre'].toString().trim() : "",
               durum: (item['durum'] != null && item['durum'].toString().isNotEmpty)
                   ? item['durum'].toString().trim()
@@ -1361,17 +1425,17 @@ class _SoforPaneliState extends State<SoforPaneli> {
                                   ),
                                 ),
                                 ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.teal.shade800,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    minimumSize: const Size(40, 32),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  icon: const Icon(Icons.phone, size: 14),
-                                  label: const Text("Veliyi Ara", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                  onPressed: () => telefonlaAra(context, ogr.veliTel),
-                                ),
+  style: ElevatedButton.styleFrom(
+    backgroundColor: Colors.teal.shade800,
+    foregroundColor: Colors.white,
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    minimumSize: const Size(40, 32),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  ),
+  icon: const Icon(Icons.phone, size: 14),
+  label: const Text("Ara", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+  onPressed: () => akilliAramaPenceresi(context, ogr.adSoyad, ogr.veliTel, ogr.ogrenciTel),
+),                                ),
                               ],
                             ),
                           ),
@@ -2023,9 +2087,10 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
 
                                           // 3. Veliyi Ara Butonu
                                           IconButton(
-                                            icon: const Icon(Icons.phone, color: Colors.teal, size: 20),
-                                            tooltip: 'Veliyi Ara',
-                                            onPressed: () => telefonlaAra(context, ogr.veliTel),
+  icon: const Icon(Icons.phone, color: Colors.teal, size: 20),
+  tooltip: 'Ara (Öğrenci / Veli)',
+  onPressed: () => akilliAramaPenceresi(context, ogr.adSoyad, ogr.veliTel, ogr.ogrenciTel),
+),
                                           ),
                                         ],
                                       ),
