@@ -97,16 +97,28 @@ Future<void> telefonlaAra(BuildContext context, String tel) async {
     return;
   }
   // 📞 AKILLI ARAMA PENCERESİ (Öğrenci tel boşsa direkt veliyi arar, doluysa sorar)
+  final uri = Uri.parse("tel:$cleanTel");
+  try {
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  } catch (_) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Arama başlatılamadı. Numara: $tel")),
+    );
+  }
+}
+// 📞 AKILLI ARAMA PENCERESİ (Öğrenci tel boşsa direkt veliyi arar, doluysa sorar)
 void akilliAramaPenceresi(BuildContext context, String adSoyad, String veliTel, String ogrenciTel) {
   final temizOgrTel = ogrenciTel.trim();
 
-  // Öğrenci telefonu yoksa (Ortaokul): Direkt veliyi ara!
   if (temizOgrTel.isEmpty || temizOgrTel == "-" || temizOgrTel == "null") {
     telefonlaAra(context, veliTel);
     return;
   }
 
-  // Öğrenci telefonu varsa (Lise): 2 seçenekli pencere aç!
   showModalBottomSheet(
     context: context,
     backgroundColor: const Color(0xFF1E293B),
@@ -157,20 +169,6 @@ void akilliAramaPenceresi(BuildContext context, String adSoyad, String veliTel, 
     ),
   );
 }
-  final uri = Uri.parse("tel:$cleanTel");
-  try {
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  } catch (_) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Arama başlatılamadı. Numara: $tel")),
-    );
-  }
-}
-
 // ---------------------------------------------------------------------------
 // MODELLER
 // ---------------------------------------------------------------------------
@@ -1434,8 +1432,7 @@ class _SoforPaneliState extends State<SoforPaneli> {
   ),
   icon: const Icon(Icons.phone, size: 14),
   label: const Text("Ara", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-  onPressed: () => akilliAramaPenceresi(context, ogr.adSoyad, ogr.veliTel, ogr.ogrenciTel),
-),                                ),
+  onPressed: () => akilliAramaPenceresi(context, ogr.adSoyad, ogr.veliTel, ogr.ogrenciTel),                               ),
                               ],
                             ),
                           ),
@@ -2090,7 +2087,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
   icon: const Icon(Icons.phone, color: Colors.teal, size: 20),
   tooltip: 'Ara (Öğrenci / Veli)',
   onPressed: () => akilliAramaPenceresi(context, ogr.adSoyad, ogr.veliTel, ogr.ogrenciTel),
-),
                                           ),
                                         ],
                                       ),
