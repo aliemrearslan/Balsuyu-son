@@ -1480,30 +1480,32 @@ class OgretmenPaneli extends StatefulWidget {
 class _OgretmenPaneliState extends State<OgretmenPaneli> {
   int seciliServisIndex = 0;
   bool girisYapildi = false;
-  bool gorevBasladi = false;
-  String gorevSaati = "";
   late NobetciOgretmen? seciliOgretmen;
   final TextEditingController pinController = TextEditingController();
+
+  // 1. Nöbetçi Göreve Başlama Durumu
+  bool gorevBasladi = false;
+  String gorevSaati = "";
+
+  // 2. Servislerin QR ve Aşama Durumları (Plaka bazlı hafıza)
+  Map<String, Map<String, dynamic>> servisDurumlari = {};
 
   @override
   void initState() {
     super.initState();
     seciliOgretmen = widget.varsayilanNobetci;
-    // Cihaza daha önce giriş yapmış öğretmeni otomatik hatırla:
     kayitliOgretmeniYukle();
-      BildirimServisi.ogretmenHatirlatmalariKur();
+    BildirimServisi.ogretmenHatirlatmalariKur();
   }
 
   @override
   void didUpdateWidget(covariant OgretmenPaneli oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Tablo verileri yenilendiğinde kayıtlı öğretmen varsa girişi açık tut:
     if (!girisYapildi && widget.nobetciler.isNotEmpty) {
       kayitliOgretmeniYukle();
     }
   }
 
-  // CİHAZA KAYITLI ÖĞRETMENİ OTOMATİK GİRİŞ YAPTIRAN FONKSİYON
   Future<void> kayitliOgretmeniYukle() async {
     final prefs = await SharedPreferences.getInstance();
     final kayitliPin = prefs.getString('balsuyu_ogretmen_pin');
@@ -1513,24 +1515,48 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
         final bulunan = widget.nobetciler.firstWhere(
           (n) => n.pin.trim() == kayitliPin.trim(),
         );
-        if (mounted) {
-          setState(() {
-            seciliOgretmen = bulunan;
-            girisYapildi = true; // Şifre sormadan paneli doğrudan aç
-          });
-          widget.onNobetciGuncellendi(bulunan);
+        // Otomatik girişte de gün kontrolü yap:
+        final bugun = getBugununGunu();
+        if (bulunan.gun.trim().toLowerCase() == bugun.trim().toLowerCase()) {
+          if (mounted) {
+            setState(() {
+              seciliOgretmen = bulunan;
+              girisYapildi = true;
+            });
+            widget.onNobetciGuncellendi(bulunan);
+          }
         }
       } catch (_) {}
     }
   }
 
-  // ÖĞRETMEN GİRİŞ YAPTIĞINDA CİHAZA KAYDET
+// ⛔ GÜN VE İDARECİ KONTROLÜ
   Future<void> pinKontrolEt() async {
-    BildirimServisi.ogretmenHatirlatmalariKur();
     if (seciliOgretmen == null) return;
+
+    final bugun = getBugununGunu().trim().toLowerCase();
+    final ogretmenGunu = seciliOgretmen!.gun.trim().toLowerCase();
+    final ogretmenAdi = seciliOgretmen!.adSoyad.trim().toLowerCase();
+
+    // Müdür ve Müdür Yardımcıları her gün girebilir:
+    final bool idareciMi = ogretmenAdi.contains("müdür") || 
+                           ogretmenAdi.contains("idare") ||
+                           seciliOgretmen!.gun.toLowerCase().contains("her gün");
+
+    // İdareci değilse ve bugün onun nöbet günü değilse engelle:
+    if (!idareciMi && ogretmenGunu != bugun) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade900,
+          duration: const Duration(seconds: 4),
+          content: Text("⛔ YETKİSİZ GİRİŞ: Bugün $bugun! Sizin nöbet gününüz (${seciliOgretmen!.gun}) değildir."),
+        ),
+      );
+      return;
+    }
+
     if (pinController.text.trim() == seciliOgretmen!.pin.trim()) {
       final prefs = await SharedPreferences.getInstance();
-      // Öğretmenin PIN'ini telefonun hafızasına kilitliyoruz:
       await prefs.setString('balsuyu_ogretmen_pin', seciliOgretmen!.pin.trim());
       await prefs.setString('balsuyu_ogretmen_ad', seciliOgretmen!.adSoyad.trim());
 
@@ -1539,15 +1565,11 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
       pinController.clear();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: Colors.red,
-          content: Text("Hatalı PIN Kodu! Lütfen tekrar deneyin."),
-        ),
+        const SnackBar(backgroundColor: Colors.red, content: Text("Hatalı PIN Kodu! Lütfen tekrar deneyin.")),
       );
     }
   }
 
-  // ÖĞRETMEN ÇIKIŞ YAPTIĞINDA CİHAZ HAFIZASINI TEMİZLE
   Future<void> ogretmenCikisYap() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('balsuyu_ogretmen_pin');
@@ -1558,18 +1580,233 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     });
   }
 
-  // 4 ADIMLI AKILLI İŞLEM MOTORU (SABAH/AKŞAM AYRIMI)
+// 🚍 AKILLI QR DOĞRULAMA VE HATA KALKANI MOTORU
+  void servisQrPenceresiAc({required bool sabahMi, required ServisHatti aktifServis}) {
+    final plaka = aktifServis.plaka;
+    final beklenenKod = "BALSUYU_SERVIS_${normalizePlaka(plaka)}";
+    final TextEditingController qrKoduGirdisi = TextEditingController(text: beklenenKod);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.teal, borderRadius: BorderRadius.circular(10))),
+            const SizedBox(height: 14),
+            Icon(Icons.qr_code_scanner_rounded, color: Colors.tealAccent, size: 44),
+            const SizedBox(height: 8),
+            Text(
+              sabahMi ? "🚍 Sabah Servis Girişi ($plaka)" : "🚀 Akşam Servis Çıkışı ($plaka)",
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              "Camdaki QR kodu okutunuz veya kodu doğrulayınız.",
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const SizedBox(height: 14),
+
+            // Okunan QR Kod Alanı (Kamera veya Barkod Okuyucu burayı doldurur)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.teal.withOpacity(0.4)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.qr_code, color: Colors.tealAccent, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      beklenenKod,
+                      style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // 1. SEÇENEK: QR KODU DOĞRULA (AKILLI KONTROL)
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: sabahMi ? Colors.teal.shade700 : Colors.amber.shade800,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 46),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.verified_rounded, size: 18),
+              label: Text("1. QR Kodu Doğrula ve Onayla ($plaka)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+              onPressed: () {
+                final okunan = qrKoduGirdisi.text.trim();
+                final normOkunan = okunan.replaceAll(' ', '').toUpperCase();
+                final normBeklenen = beklenenKod.replaceAll(' ', '').toUpperCase();
+
+                // AKILLI HATA KALKANI KONTROLÜ:
+                if (normOkunan == normBeklenen) {
+                  // ✅ DOĞRU ARAÇ: Onayla!
+                  Navigator.pop(ctx);
+                  _servisKaydet(sabahMi: sabahMi, aktifServis: aktifServis, qrIleMi: true);
+                } else if (normOkunan.startsWith("BALSUYU_SERVIS_")) {
+                  // ⛔ YANLIŞ ARAÇ KODU: Başka servisin QR'ı okutuldu!
+                  showDialog(
+                    context: context,
+                    builder: (c) => AlertDialog(
+                      backgroundColor: const Color(0xFF1E293B),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      title: const Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.redAccent),
+                          SizedBox(width: 8),
+                          Text("YANLIŞ ARAÇ!", style: TextStyle(color: Colors.redAccent, fontSize: 15, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      content: Text(
+                        "Ekranda $plaka seçili ancak siz başka bir servisin kodunu okuttunuz!\n\nLütfen doğru aracın camındaki QR kodu okutunuz.",
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(c), child: const Text("TAMAM", style: TextStyle(color: Colors.tealAccent))),
+                      ],
+                    ),
+                  );
+                } else {
+                  // ⛔ GEÇERSİZ KOD!
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(backgroundColor: Colors.red, content: Text("⛔ GEÇERSİZ QR KOD! Bu bir Balsuyu MTAL servis kodu değildir.")),
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+
+            // 2. SEÇENEK: MANUEL ONAY (MÜDÜRE 'MANUEL ONAYLANDI' OLARAK GİDER)
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.amberAccent,
+                side: const BorderSide(color: Colors.amberAccent),
+                minimumSize: const Size(double.infinity, 42),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.touch_app_rounded, size: 16),
+              label: const Text("2. QR Okunmuyor (Manuel Onayla)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _servisKaydet(sabahMi: sabahMi, aktifServis: aktifServis, qrIleMi: false);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Ortak Servis Kayıt Motoru
+  void _servisKaydet({required bool sabahMi, required ServisHatti aktifServis, required bool qrIleMi}) {
+    final plaka = aktifServis.plaka;
+    final now = DateTime.now();
+    final saat = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+    final yontemStr = qrIleMi ? "QR Okutuldu" : "Manuel (Öğretmen)";
+
+    setState(() {
+      if (!servisDurumlari.containsKey(plaka)) {
+        servisDurumlari[plaka] = {};
+      }
+      if (sabahMi) {
+        servisDurumlari[plaka]!['sabahGeldi'] = true;
+        servisDurumlari[plaka]!['sabahGeldiSaat'] = "$saat (${qrIleMi ? 'QR' : 'MANUEL'})";
+      } else {
+        servisDurumlari[plaka]!['aksamHareket'] = true;
+        servisDurumlari[plaka]!['aksamHareketSaat'] = "$saat (${qrIleMi ? 'QR' : 'MANUEL'})";
+      }
+    });
+
+    googleTabloyaGonder(
+      plaka: plaka,
+      koy: aktifServis.guzergah,
+      adSoyad: "Şoför: ${aktifServis.soforAdi}",
+      sinif: "-",
+      islem: sabahMi ? "SERVIS_SABAH_GELDI" : "SERVIS_AKSAM_HAREKET",
+      yontem: yontemStr,
+      ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: qrIleMi ? Colors.teal.shade900 : Colors.amber.shade900,
+        content: Text(
+          qrIleMi 
+            ? "$plaka QR ile Doğrulandı! ✅ ($saat)" 
+            : "$plaka MANUEL ONAYLANDI Olarak Kaydedildi! ⚠️ ($saat)",
+        ),
+      ),
+    );
+  }
+  // Ortak Servis Kayıt Motoru (QR mı Manuel mi olduğunu Google'a basar)
+  void _servisKaydet({required bool sabahMi, required ServisHatti aktifServis, required bool qrIleMi}) {
+    final plaka = aktifServis.plaka;
+    final now = DateTime.now();
+    final saat = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+    final yontemStr = qrIleMi ? "QR Okutuldu" : "Manuel (Öğretmen)";
+
+    setState(() {
+      if (!servisDurumlari.containsKey(plaka)) {
+        servisDurumlari[plaka] = {};
+      }
+      if (sabahMi) {
+        servisDurumlari[plaka]!['sabahGeldi'] = true;
+        servisDurumlari[plaka]!['sabahGeldiSaat'] = "$saat (${qrIleMi ? 'QR' : 'MANUEL'})";
+      } else {
+        servisDurumlari[plaka]!['aksamHareket'] = true;
+        servisDurumlari[plaka]!['aksamHareketSaat'] = "$saat (${qrIleMi ? 'QR' : 'MANUEL'})";
+      }
+    });
+
+    googleTabloyaGonder(
+      plaka: plaka,
+      koy: aktifServis.guzergah,
+      adSoyad: "Şoför: ${aktifServis.soforAdi}",
+      sinif: "-",
+      islem: sabahMi ? "SERVIS_SABAH_GELDI" : "SERVIS_AKSAM_HAREKET",
+      yontem: yontemStr,
+      ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: qrIleMi ? Colors.teal.shade900 : Colors.amber.shade900,
+        content: Text(
+          qrIleMi 
+            ? "$plaka QR ile Doğrulandı! ✅ ($saat)" 
+            : "$plaka MANUEL ONAYLANDI Olarak Kaydedildi! ⚠️ ($saat)",
+        ),
+      ),
+    );
+  }
+  const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
   void adimiIlerlet(Ogrenci ogr, String plaka) {
-    // --- SAAT KİLİDİ KONTROLÜ ---
     final engelMesaji = ServisZamanKontrolu.kilitKontrolu(ogr.adim);
     if (engelMesaji != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(backgroundColor: Colors.red.shade800, content: Text(engelMesaji)),
       );
-      return; // Saat dışıysa işlemi durdur, Google'a gönderme!
+      return;
     }
-    // ---------------------------- 
-    
+
     final now = DateTime.now();
     final saatStr = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
 
@@ -1618,7 +1855,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     );
   }
 
-  // YANLIŞ BASILIRSA VEYA TEST İÇİN SIFIRLAMA BUTONU (↺)
   void adimiSifirla(Ogrenci ogr) {
     setState(() {
       ogr.adim = 0;
@@ -1630,7 +1866,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     );
   }
 
-  // Öğrenci kartındaki durum rozeti
   Widget _ogretmenDurumRozeti(Ogrenci ogr) {
     if (ogr.adim == 1) {
       return Text("🟢 1. Sabah Bindi: ${ogr.saat ?? ''}", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green));
@@ -1679,10 +1914,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
             const SizedBox(height: 16),
             const Text("Günün Resmi Yoklama Raporu", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text(
-              "$tarih — Nöbetçi: ${seciliOgretmen?.adSoyad ?? '-'}",
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-            ),
+            Text("$tarih — Nöbetçi: ${seciliOgretmen?.adSoyad ?? '-'}", style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -1709,10 +1941,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
               onPressed: () {
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: Color(0xFF25D366),
-                    content: Text("WhatsApp mesajı hazırlandı! 📲"),
-                  ),
+                  const SnackBar(backgroundColor: Color(0xFF25D366), content: Text("WhatsApp mesajı hazırlandı! 📲")),
                 );
               },
             ),
@@ -1750,28 +1979,17 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                 children: [
                   mebLogoRozeti(),
                   const SizedBox(height: 16),
-                  const Text(
-                    "BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.3),
-                  ),
+                  const Text("BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ", textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(color: Colors.teal.shade900, borderRadius: BorderRadius.circular(6)),
-                    child: Text(
-                      "Bugün: ${getBugununGunu()} Nöbeti",
-                      style: const TextStyle(color: Colors.tealAccent, fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
+                    child: Text("Bugün: ${getBugununGunu()} Nöbeti", style: const TextStyle(color: Colors.tealAccent, fontSize: 11, fontWeight: FontWeight.bold)),
                   ),
                   const SizedBox(height: 28),
                   Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.teal.withOpacity(0.3)),
-                    ),
+                    decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.teal.withOpacity(0.3))),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1787,10 +2005,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                           ),
                           items: widget.nobetciler.map((n) {
-                            return DropdownMenuItem(
-                              value: n,
-                              child: Text("${n.adSoyad} (${n.gun})"),
-                            );
+                            return DropdownMenuItem(value: n, child: Text("${n.adSoyad} (${n.gun})"));
                           }).toList(),
                           onChanged: (val) => setState(() => seciliOgretmen = val),
                         ),
@@ -1843,7 +2058,17 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
         : null;
     final binenSayisi = aktifServis?.ogrenciler.where((o) => o.durum == 'serviste').length ?? 0;
     final inenSayisi = aktifServis?.ogrenciler.where((o) => o.durum == 'indi').length ?? 0;
-    final bekleyenSayisi = aktifServis?.ogrenciler.where((o) => o.durum == 'binmedi').length ?? 0;
+    final beklenenSayisi = aktifServis?.ogrenciler.where((o) => o.durum == 'binmedi').length ?? 0;
+
+    // Servisin Anlık QR ve Aşama Durumları
+    final plaka = aktifServis?.plaka ?? "";
+    final durumMap = servisDurumlari[plaka] ?? {};
+    final bool sabahGeldi = durumMap['sabahGeldi'] == true;
+    final String sabahGeldiSaat = durumMap['sabahGeldiSaat'] ?? '';
+    final bool sabahTamam = durumMap['sabahTamam'] == true;
+    final String sabahTamamSaat = durumMap['sabahTamamSaat'] ?? '';
+    final bool aksamHareket = durumMap['aksamHareket'] == true;
+    final String aksamHareketSaat = durumMap['aksamHareketSaat'] ?? '';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F8),
@@ -1859,56 +2084,24 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.2),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    'Nöbetçi: ${seciliOgretmen?.adSoyad ?? "Öğretmen"} (${getBugununGunu()})',
-                    style: const TextStyle(fontSize: 10, color: Colors.white70),
-                  ),
+                  const Text("BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.2), overflow: TextOverflow.ellipsis),
+                  Text("Nöbetçi: ${seciliOgretmen?.adSoyad ?? "Öğretmen"} (${getBugununGunu()})", style: const TextStyle(fontSize: 10, color: Colors.white70)),
                 ],
               ),
             ),
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, size: 22),
-            tooltip: 'Yenile',
-            onPressed: () async {
-              await widget.onYenile();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: Colors.teal,
-                    duration: Duration(seconds: 2),
-                    content: Text("Güncel veriler yüklendi! 🔄"),
-                  ),
-                );
-              }
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.share_rounded, size: 20),
-            tooltip: 'Rapor Paylaş',
-            onPressed: raporPenceresiniAc,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout_rounded, size: 20),
-            tooltip: 'Çıkış',
-            onPressed: ogretmenCikisYap,
-          ),
+          // ⛔ TEHLİKELİ YENİLEME BUTONU SİLİNDİ!
+          IconButton(icon: const Icon(Icons.share_rounded, size: 20), tooltip: 'Rapor Paylaş', onPressed: raporPenceresiniAc),
+          IconButton(icon: const Icon(Icons.logout_rounded, size: 20), tooltip: 'Çıkış', onPressed: ogretmenCikisYap),
           const SizedBox(width: 4),
         ],
       ),
       body: aktifServis == null
           ? const Center(child: Text("Kayıtlı servis hattı bulunamadı."))
-          : RefreshIndicator(
-              onRefresh: widget.onYenile,
-              child: Column(children: [
+          : Column(
+              children: [
                 // 🏫 1. NÖBETÇİ ÖĞRETMEN GÖREVE BAŞLAMA ŞERİDİ
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -1928,21 +2121,12 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                           gorevBasladi 
                               ? "✅ Görev Başındasınız (Saat: $gorevSaati)" 
                               : "⚠️ Henüz göreve başlama bildirimi yapmadınız!",
-                          style: TextStyle(
-                            fontSize: 11, 
-                            fontWeight: FontWeight.bold,
-                            color: gorevBasladi ? Colors.green.shade900 : Colors.orange.shade900
-                          ),
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: gorevBasladi ? Colors.green.shade900 : Colors.orange.shade900),
                         ),
                       ),
                       if (!gorevBasladi)
                         ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.teal.shade800,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            minimumSize: const Size(60, 30),
-                          ),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal.shade800, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), minimumSize: const Size(60, 30)),
                           onPressed: () {
                             final now = DateTime.now();
                             final s = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
@@ -1959,9 +2143,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                               yontem: "Öğretmen Butonu",
                               ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
                             );
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(backgroundColor: Colors.green, content: Text("Göreve başlama bildirimi müdüre iletildi! 🏫")),
-                            );
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(backgroundColor: Colors.green, content: Text("Göreve başlama bildirimi müdüre iletildi! 🏫")));
                           },
                           child: const Text("Göreve Başla", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                         ),
@@ -1969,60 +2151,49 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                   ),
                 ),
 
-                // 🚍 2. SERVİS QR VE HAREKET PROTOKOLÜ (SABAH & AKŞAM)
+                // 🚍 2. SERVİS QR VE HAREKET PROTOKOLÜ (SABAH & AKŞAM BİRBİRİNE KİLİTLİ!)
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.teal.shade200),
-                  ),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.teal.shade200)),
                   child: Row(
                     children: [
-                      // SABAH: 1. Servis Geldi (QR Oku)
+                      // BUTON 1: Sabah Servis Geldi (QR Oku)
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.teal.shade700,
+                            backgroundColor: sabahGeldi ? Colors.teal.shade900 : Colors.teal.shade700,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 6),
                           ),
-                          icon: const Icon(Icons.qr_code_scanner, size: 16),
-                          label: const Text("1. Servis Geldi (QR)", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                          onPressed: () {
-                            final now = DateTime.now();
-                            final s = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
-                            googleTabloyaGonder(
-                              plaka: aktifServis.plaka,
-                              koy: aktifServis.guzergah,
-                              adSoyad: "Şoför: ${aktifServis.soforAdi}",
-                              sinif: "-",
-                              islem: "SERVIS_SABAH_GELDI",
-                              yontem: "QR Okutuldu",
-                              ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
-                            );
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(backgroundColor: Colors.teal.shade900, content: Text("${aktifServis.plaka} Okula Ulaştı Olarak Onaylandı! ✅ ($s)")),
-                            );
-                          },
+                          icon: Icon(sabahGeldi ? Icons.check_circle : Icons.qr_code_scanner, size: 15),
+                          label: Text(sabahGeldi ? "1. Geldi ($sabahGeldiSaat)" : "1. Servis Geldi (QR)", style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                          onPressed: sabahGeldi ? null : () => servisQrPenceresiAc(sabahMi: true, aktifServis: aktifServis),
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 4),
 
-                      // SABAH: 2. Sabah Yoklaması Tamamlandı
+                      // BUTON 2: Sabah Yoklaması Tamamlandı (SADECE SERVİS GELDİKTEN SONRA AÇILIR!)
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue.shade700,
+                            backgroundColor: sabahTamam 
+                                ? Colors.blue.shade900 
+                                : sabahGeldi 
+                                    ? Colors.blue.shade700 
+                                    : Colors.grey.shade400, // Gelmediyse KİLİTLİ/GRİ!
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 6),
                           ),
-                          icon: const Icon(Icons.check_circle_outline, size: 16),
-                          label: const Text("2. Sabah Bitti", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                          onPressed: () {
+                          icon: Icon(sabahTamam ? Icons.verified : Icons.check_circle_outline, size: 15),
+                          label: Text(sabahTamam ? "2. Bitti ($sabahTamamSaat)" : "2. Sabah Bitti", style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                          onPressed: (!sabahGeldi || sabahTamam) ? null : () {
                             final now = DateTime.now();
                             final s = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+                            setState(() {
+                              servisDurumlari[plaka]!['sabahTamam'] = true;
+                              servisDurumlari[plaka]!['sabahTamamSaat'] = s;
+                            });
                             googleTabloyaGonder(
                               plaka: aktifServis.plaka,
                               koy: aktifServis.guzergah,
@@ -2032,224 +2203,166 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                               yontem: "Öğretmen Onayı",
                               ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
                             );
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(backgroundColor: Colors.blue.shade900, content: Text("${aktifServis.plaka} Sabah İndirme İşlemi Tamamlandı! 🏁 ($s)")),
-                            );
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.blue.shade900, content: Text("${aktifServis.plaka} Sabah İndirme İşlemi Bitti! 🏁 ($s)")));
                           },
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 4),
 
-                      // AKŞAM: 3. Servis Hareket Etti (Kalkış QR)
+                      // BUTON 3: Akşam Servis Hareket Etti (Kalkış QR)
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.amber.shade800,
+                            backgroundColor: aksamHareket ? Colors.amber.shade900 : Colors.amber.shade800,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 6),
                           ),
-                          icon: const Icon(Icons.directions_bus, size: 16),
-                          label: const Text("3. Hareket Etti (QR)", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                          onPressed: () {
-                            final now = DateTime.now();
-                            final s = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
-                            googleTabloyaGonder(
-                              plaka: aktifServis.plaka,
-                              koy: aktifServis.guzergah,
-                              adSoyad: "Şoför: ${aktifServis.soforAdi}",
-                              sinif: "-",
-                              islem: "SERVIS_AKSAM_HAREKET",
-                              yontem: "Kalkış QR Okutuldu",
-                              ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
-                            );
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(backgroundColor: Colors.amber.shade900, content: Text("${aktifServis.plaka} Yola Çıktı Olarak İşlendi! 🚀 ($s)")),
-                            );
-                          },
+                          icon: Icon(aksamHareket ? Icons.done_all : Icons.directions_bus, size: 15),
+                          label: Text(aksamHareket ? "3. Yolda ($aksamHareketSaat)" : "3. Hareket (QR)", style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                          onPressed: aksamHareket ? null : () => servisQrPenceresiAc(sabahMi: false, aktifServis: aktifServis),
                         ),
                       ),
                     ],
                   ),
-                ),                  
+                ),
+
+                // Plaka Seçici
                 Container(
-                    height: 52,
-                    padding: const EdgeInsets.symmetric(vertical: 5),
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: widget.servisler.length,
-                      itemBuilder: (context, index) {
-                        final seciliMi = index == seciliServisIndex;
-                        final s = widget.servisler[index];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 5),
-                          child: FilterChip(
-                            selected: seciliMi,
-                            label: Text(
-                              "${s.plaka} (${s.hatAdi.split(' ')[0]})",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                                color: seciliMi ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                            selectedColor: const Color(0xFF0A2E26),
-                            backgroundColor: Colors.white,
-                            onSelected: (val) => setState(() => seciliServisIndex = index),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.teal.shade100),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.directions_bus_rounded, color: Colors.teal, size: 26),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "${aktifServis.hatAdi} — ${aktifServis.plaka}",
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                              ),
-                              Text(
-                                "Şoför: ${aktifServis.soforAdi} (${aktifServis.soforTel})",
-                                style: TextStyle(color: Colors.grey.shade800, fontSize: 11, fontWeight: FontWeight.w500),
-                              ),
-                              Text(
-                                aktifServis.guzergah,
-                                style: TextStyle(color: Colors.grey.shade600, fontSize: 10),
-                              ),
-                            ],
-                          ),
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: widget.servisler.length,
+                    itemBuilder: (context, index) {
+                      final seciliMi = index == seciliServisIndex;
+                      final s = widget.servisler[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        child: FilterChip(
+                          selected: seciliMi,
+                          label: Text(s.plaka, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: seciliMi ? Colors.white : Colors.black87)),
+                          selectedColor: const Color(0xFF0A2E26),
+                          backgroundColor: Colors.white,
+                          onSelected: (val) => setState(() => seciliServisIndex = index),
                         ),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green.shade700,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          icon: const Icon(Icons.phone, size: 16),
-                          label: const Text("Ara", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                          onPressed: () => telefonlaAra(context, aktifServis.soforTel),
+                      );
+                    },
+                  ),
+                ),
+
+                // Şoför Kartı
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.teal.shade100)),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.directions_bus_rounded, color: Colors.teal, size: 24),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("${aktifServis.hatAdi} — ${aktifServis.plaka}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                            Text("Şoför: ${aktifServis.soforAdi} (${aktifServis.soforTel})", style: TextStyle(color: Colors.grey.shade800, fontSize: 10)),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6))),
+                        icon: const Icon(Icons.phone, size: 14),
+                        label: const Text("Ara", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                        onPressed: () => telefonlaAra(context, aktifServis.soforTel),
+                      ),
+                    ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                    child: Row(
-                      children: [
-                        _sayacKutusu("Serviste", binenSayisi, Colors.green),
-                        const SizedBox(width: 6),
-                        _sayacKutusu("Okulda (İndi)", inenSayisi, Colors.blue),
-                        const SizedBox(width: 6),
-                        _sayacKutusu("Bekleniyor", bekleyenSayisi, Colors.orange),
-                      ],
-                    ),
+                ),
+
+                // Sayaçlar
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  child: Row(
+                    children: [
+                      _sayacKutusu("Serviste", binenSayisi, Colors.green),
+                      const SizedBox(width: 6),
+                      _sayacKutusu("Okulda (İndi)", inenSayisi, Colors.blue),
+                      const SizedBox(width: 6),
+                      _sayacKutusu("Bekleniyor", beklenenSayisi, Colors.orange),
+                    ],
                   ),
-                  Expanded(
-                    child: aktifServis.ogrenciler.isEmpty
-                        ? Center(
-                            child: Text(
-                              "${aktifServis.plaka} servisine ait öğrenci bulunamadı.",
-                              style: const TextStyle(color: Colors.grey, fontSize: 12),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-                            itemCount: aktifServis.ogrenciler.length,
-                            itemBuilder: (context, index) {
-                              final ogr = aktifServis.ogrenciler[index];
-                              return Card(
-                                elevation: 1,
-                                margin: const EdgeInsets.only(bottom: 7),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                  child: Row(
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 17,
-                                        backgroundColor: _durumRengi(ogr.durum).withOpacity(0.15),
-                                        child: Icon(_durumIkonu(ogr.durum), color: _durumRengi(ogr.durum), size: 18),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(ogr.adSoyad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                            Text("${ogr.koyDurak} (No: ${ogr.id} - ${ogr.sinif})",
-                                                style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                            const SizedBox(height: 2),
-                                            _ogretmenDurumRozeti(ogr), // <-- 4 AŞAMALI AKILLI ROZET
-                                          ],
-                                        ),
-                                      ),
-                                      // SAĞ TARAF: 4 ADIMLI AKILLI BUTONLAR
-                                      Row(
+                ),
+
+                // Öğrenci Listesi
+                Expanded(
+                  child: aktifServis.ogrenciler.isEmpty
+                      ? Center(child: Text("${aktifServis.plaka} servisine ait öğrenci bulunamadı.", style: const TextStyle(color: Colors.grey, fontSize: 12)))
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                          itemCount: aktifServis.ogrenciler.length,
+                          itemBuilder: (context, index) {
+                            final ogr = aktifServis.ogrenciler[index];
+                            return Card(
+                              elevation: 1,
+                              margin: const EdgeInsets.only(bottom: 6),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: _durumRengi(ogr.durum).withOpacity(0.15),
+                                      child: Icon(_durumIkonu(ogr.durum), color: _durumRengi(ogr.durum), size: 16),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          // 1. Sıradaki Adım Butonu
-                                          if (ogr.adim < 4)
-                                            ElevatedButton(
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: (ogr.adim % 2 == 0)
-                                                    ? Colors.green.shade700
-                                                    : Colors.blue.shade700,
-                                                foregroundColor: Colors.white,
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                minimumSize: const Size(60, 28),
-                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                              ),
-                                              onPressed: () => adimiIlerlet(ogr, aktifServis.plaka),
-                                              child: Text(
-                                                _siradakiButonMetni(ogr.adim),
-                                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-                                              ),
-                                            )
-                                          else
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                              decoration: BoxDecoration(color: Colors.teal.shade800, borderRadius: BorderRadius.circular(6)),
-                                              child: const Text("TAMAM ✅", style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
-                                            ),
-
-                                          // 2. Yanlış Basılırsa Geri Al / Başa Sar (↺)
-                                          if (ogr.adim > 0)
-                                            IconButton(
-                                              icon: const Icon(Icons.undo_rounded, size: 18, color: Colors.grey),
-                                              tooltip: 'Sıfırla / Başa Al',
-                                              onPressed: () => adimiSifirla(ogr),
-                                            ),
-
-                                          // 3. Veliyi Ara Butonu
-                                          IconButton(
-  icon: const Icon(Icons.phone, color: Colors.teal, size: 20),
-  tooltip: 'Ara (Öğrenci / Veli)',
-  onPressed: () => akilliAramaPenceresi(context, ogr.adSoyad, ogr.veliTel, ogr.ogrenciTel),
-                                          ),
+                                          Text(ogr.adSoyad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                          Text("${ogr.koyDurak} (No: ${ogr.id} - ${ogr.sinif})", style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                          _ogretmenDurumRozeti(ogr),
                                         ],
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    Row(
+                                      children: [
+                                        if (ogr.adim < 4)
+                                          ElevatedButton(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: (ogr.adim % 2 == 0) ? Colors.green.shade700 : Colors.blue.shade700,
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                              minimumSize: const Size(55, 26),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                            ),
+                                            onPressed: () => adimiIlerlet(ogr, aktifServis.plaka),
+                                            child: Text(_siradakiButonMetni(ogr.adim), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                                          )
+                                        else
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(color: Colors.teal.shade800, borderRadius: BorderRadius.circular(4)),
+                                            child: const Text("TAMAM ✅", style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                                          ),
+                                        if (ogr.adim > 0)
+                                          IconButton(icon: const Icon(Icons.undo_rounded, size: 16, color: Colors.grey), tooltip: 'Sıfırla', onPressed: () => adimiSifirla(ogr)),
+                                        IconButton(
+                                          icon: const Icon(Icons.phone, color: Colors.teal, size: 18),
+                                          tooltip: 'Ara (Öğrenci / Veli)',
+                                          onPressed: () => akilliAramaPenceresi(context, ogr.adSoyad, ogr.veliTel, ogr.ogrenciTel),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
-                              );
-                            },
-                          ),
-                  ),
-                  arslanogluGroupFooter(),
-                ],
-              ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                arslanogluGroupFooter(),
+              ],
             ),
     );
   }
@@ -2257,16 +2370,12 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
   Widget _sayacKutusu(String baslik, int sayi, Color renk) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        decoration: BoxDecoration(
-          color: renk.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: renk.withOpacity(0.3)),
-        ),
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        decoration: BoxDecoration(color: renk.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: renk.withOpacity(0.3))),
         child: Column(
           children: [
-            Text("$sayi", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: renk)),
-            Text(baslik, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: renk)),
+            Text("$sayi", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: renk)),
+            Text(baslik, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: renk)),
           ],
         ),
       ),
