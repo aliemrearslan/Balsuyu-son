@@ -1267,19 +1267,6 @@ class _SoforPaneliState extends State<SoforPaneli> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Yenile',
-            onPressed: () async {
-              await widget.onYenile();
-              await kayitliSoforuYukle();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Öğrenci yoklaması güncellendi! 🔄")),
-                );
-              }
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Çıkış',
             onPressed: soforCikisYap,
@@ -1493,6 +1480,8 @@ class OgretmenPaneli extends StatefulWidget {
 class _OgretmenPaneliState extends State<OgretmenPaneli> {
   int seciliServisIndex = 0;
   bool girisYapildi = false;
+  bool gorevBasladi = false;
+  String gorevSaati = "";
   late NobetciOgretmen? seciliOgretmen;
   final TextEditingController pinController = TextEditingController();
 
@@ -1919,9 +1908,170 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
           ? const Center(child: Text("Kayıtlı servis hattı bulunamadı."))
           : RefreshIndicator(
               onRefresh: widget.onYenile,
-              child: Column(
-                children: [
-                  Container(
+              child: Column(children: [
+                // 🏫 1. NÖBETÇİ ÖĞRETMEN GÖREVE BAŞLAMA ŞERİDİ
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: gorevBasladi ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: gorevBasladi ? Colors.green : Colors.orange),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(gorevBasladi ? Icons.verified : Icons.access_time_filled, 
+                           color: gorevBasladi ? Colors.green.shade800 : Colors.orange.shade800, size: 22),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          gorevBasladi 
+                              ? "✅ Görev Başındasınız (Saat: $gorevSaati)" 
+                              : "⚠️ Henüz göreve başlama bildirimi yapmadınız!",
+                          style: TextStyle(
+                            fontSize: 11, 
+                            fontWeight: FontWeight.bold,
+                            color: gorevBasladi ? Colors.green.shade900 : Colors.orange.shade900
+                          ),
+                        ),
+                      ),
+                      if (!gorevBasladi)
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal.shade800,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            minimumSize: const Size(60, 30),
+                          ),
+                          onPressed: () {
+                            final now = DateTime.now();
+                            final s = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+                            setState(() {
+                              gorevBasladi = true;
+                              gorevSaati = s;
+                            });
+                            googleTabloyaGonder(
+                              plaka: "-",
+                              koy: "Okul Girişi",
+                              adSoyad: seciliOgretmen?.adSoyad ?? "Nöbetçi",
+                              sinif: "-",
+                              islem: "OGRETMEN_GOREVE_BASLADI",
+                              yontem: "Öğretmen Butonu",
+                              ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(backgroundColor: Colors.green, content: Text("Göreve başlama bildirimi müdüre iletildi! 🏫")),
+                            );
+                          },
+                          child: const Text("Göreve Başla", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                        ),
+                    ],
+                  ),
+                ),
+
+                // 🚍 2. SERVİS QR VE HAREKET PROTOKOLÜ (SABAH & AKŞAM)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.teal.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      // SABAH: 1. Servis Geldi (QR Oku)
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal.shade700,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                          ),
+                          icon: const Icon(Icons.qr_code_scanner, size: 16),
+                          label: const Text("1. Servis Geldi (QR)", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                          onPressed: () {
+                            final now = DateTime.now();
+                            final s = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+                            googleTabloyaGonder(
+                              plaka: aktifServis.plaka,
+                              koy: aktifServis.guzergah,
+                              adSoyad: "Şoför: ${aktifServis.soforAdi}",
+                              sinif: "-",
+                              islem: "SERVIS_SABAH_GELDI",
+                              yontem: "QR Okutuldu",
+                              ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(backgroundColor: Colors.teal.shade900, content: Text("${aktifServis.plaka} Okula Ulaştı Olarak Onaylandı! ✅ ($s)")),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+
+                      // SABAH: 2. Sabah Yoklaması Tamamlandı
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade700,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                          ),
+                          icon: const Icon(Icons.check_circle_outline, size: 16),
+                          label: const Text("2. Sabah Bitti", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                          onPressed: () {
+                            final now = DateTime.now();
+                            final s = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+                            googleTabloyaGonder(
+                              plaka: aktifServis.plaka,
+                              koy: aktifServis.guzergah,
+                              adSoyad: "Şoför: ${aktifServis.soforAdi}",
+                              sinif: "-",
+                              islem: "SERVIS_SABAH_TAMAM",
+                              yontem: "Öğretmen Onayı",
+                              ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(backgroundColor: Colors.blue.shade900, content: Text("${aktifServis.plaka} Sabah İndirme İşlemi Tamamlandı! 🏁 ($s)")),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+
+                      // AKŞAM: 3. Servis Hareket Etti (Kalkış QR)
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber.shade800,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                          ),
+                          icon: const Icon(Icons.directions_bus, size: 16),
+                          label: const Text("3. Hareket Etti (QR)", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                          onPressed: () {
+                            final now = DateTime.now();
+                            final s = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+                            googleTabloyaGonder(
+                              plaka: aktifServis.plaka,
+                              koy: aktifServis.guzergah,
+                              adSoyad: "Şoför: ${aktifServis.soforAdi}",
+                              sinif: "-",
+                              islem: "SERVIS_AKSAM_HAREKET",
+                              yontem: "Kalkış QR Okutuldu",
+                              ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(backgroundColor: Colors.amber.shade900, content: Text("${aktifServis.plaka} Yola Çıktı Olarak İşlendi! 🚀 ($s)")),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),                  
+                Container(
                     height: 52,
                     padding: const EdgeInsets.symmetric(vertical: 5),
                     child: ListView.builder(
