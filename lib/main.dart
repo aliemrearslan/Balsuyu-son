@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:async';
+import 'package:flutter/services.dart'; // <-- TİTREŞİM VE BİP SESİ MOTORUimport 'dart:async';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -1086,6 +1086,51 @@ class SoforPaneli extends StatefulWidget {
   State<SoforPaneli> createState() => _SoforPaneliState();
 }
 class _SoforPaneliState extends State<SoforPaneli> {
+  // 📱 ŞOFÖRÜN YEDEK QR KODU PENCERESİ
+  void yedekQrPenceresiAc() {
+    if (soforServisi == null) return;
+    final plaka = soforServisi!.plaka;
+    final normPlaka = normalizePlaka(plaka);
+    final qrKodVerisi = "BALSUYU_SERVIS_$normPlaka";
+    final qrResimUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=$qrKodVerisi";
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(10))),
+            const SizedBox(height: 14),
+            Text("📱 YEDEK SERVİS QR KODU", style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text("$plaka — Camdaki kod okunamıyorsa öğretmene bu ekranı tutunuz.", textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+            const SizedBox(height: 16),
+            // QR KOD RESMİ
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                qrResimUrl,
+                width: 200,
+                height: 200,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return const SizedBox(width: 200, height: 200, child: Center(child: CircularProgressIndicator(color: Colors.amberAccent)));
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(qrKodVerisi, style: const TextStyle(color: Colors.tealAccent, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1)),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
   ServisHatti? soforServisi;
   final TextEditingController telController = TextEditingController();
   Timer? otoYenileyici;
@@ -1269,6 +1314,12 @@ class _SoforPaneliState extends State<SoforPaneli> {
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Çıkış',
+            // 📱 ŞOFÖRÜN YEDEK QR KODU BUTONU:
+          IconButton(
+            icon: const Icon(Icons.qr_code_2_rounded, color: Colors.amberAccent, size: 26),
+            tooltip: 'Yedek QR Kodumu Göster',
+            onPressed: yedekQrPenceresiAc,
+          ),            
             onPressed: soforCikisYap,
           ),
         ],
@@ -1710,7 +1761,10 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
   }
 
   // Ortak Servis Kayıt Motoru
-  void _servisKaydet({required bool sabahMi, required ServisHatti aktifServis, required bool qrIleMi}) {
+void _servisKaydet({required bool sabahMi, required ServisHatti aktifServis, required bool qrIleMi}) {
+    // 🔔 ONAY SESİ VE KUVVETLİ TİTREŞİM:
+    HapticFeedback.heavyImpact(); // Telefon titrer
+    SystemSound.play(SystemSoundType.click); // Bip sesi çalar
     final plaka = aktifServis.plaka;
     final now = DateTime.now();
     final saat = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
