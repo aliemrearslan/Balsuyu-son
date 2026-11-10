@@ -1751,53 +1751,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     );
   }
   // Ortak Servis Kayıt Motoru (QR mı Manuel mi olduğunu Google'a basar)
-  void _servisKaydet({required bool sabahMi, required ServisHatti aktifServis, required bool qrIleMi}) {
-    final plaka = aktifServis.plaka;
-    final now = DateTime.now();
-    final saat = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
-    final yontemStr = qrIleMi ? "QR Okutuldu" : "Manuel (Öğretmen)";
-
-    setState(() {
-      if (!servisDurumlari.containsKey(plaka)) {
-        servisDurumlari[plaka] = {};
-      }
-      if (sabahMi) {
-        servisDurumlari[plaka]!['sabahGeldi'] = true;
-        servisDurumlari[plaka]!['sabahGeldiSaat'] = "$saat (${qrIleMi ? 'QR' : 'MANUEL'})";
-      } else {
-        servisDurumlari[plaka]!['aksamHareket'] = true;
-        servisDurumlari[plaka]!['aksamHareketSaat'] = "$saat (${qrIleMi ? 'QR' : 'MANUEL'})";
-      }
-    });
-
-    googleTabloyaGonder(
-      plaka: plaka,
-      koy: aktifServis.guzergah,
-      adSoyad: "Şoför: ${aktifServis.soforAdi}",
-      sinif: "-",
-      islem: sabahMi ? "SERVIS_SABAH_GELDI" : "SERVIS_AKSAM_HAREKET",
-      yontem: yontemStr,
-      ogretmen: seciliOgretmen?.adSoyad ?? "Nöbetçi",
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: qrIleMi ? Colors.teal.shade900 : Colors.amber.shade900,
-        content: Text(
-          qrIleMi 
-            ? "$plaka QR ile Doğrulandı! ✅ ($saat)" 
-            : "$plaka MANUEL ONAYLANDI Olarak Kaydedildi! ⚠️ ($saat)",
-        ),
-      ),
-    );
-  }
-  const SizedBox(height: 10),
-          ],
-        ),
-      ),
-    );
-  }
-
+  
   void adimiIlerlet(Ogrenci ogr, String plaka) {
     final engelMesaji = ServisZamanKontrolu.kilitKontrolu(ogr.adim);
     if (engelMesaji != null) {
