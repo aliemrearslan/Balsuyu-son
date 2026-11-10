@@ -1,3 +1,4 @@
+import 'dart:async'; // <-- EN TEPEYE BU SATIRI EKLE (Timer için şart)
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -1310,16 +1311,15 @@ class _SoforPaneliState extends State<SoforPaneli> {
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Çıkış',
-            // 📱 ŞOFÖRÜN YEDEK QR KODU BUTONU:
+actions: [
           IconButton(
             icon: const Icon(Icons.qr_code_2_rounded, color: Colors.amberAccent, size: 26),
             tooltip: 'Yedek QR Kodumu Göster',
             onPressed: yedekQrPenceresiAc,
-          ),            
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Çıkış',
             onPressed: soforCikisYap,
           ),
         ],
