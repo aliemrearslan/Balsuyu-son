@@ -31,18 +31,19 @@ jobs:
 
       - run: flutter create . --platforms=android,web
 
-      # ANDROID İZİNLERİ VE BİLDİRİM (DESUGARING) AYARINI OTOMATİK AÇAR:
+      # ANDROID KAMERA İZNİ + IPHONE SAFARI BARKOD MOTORU (ZXING)
       - run: |
           python3 -c "
           import os
 
-          # 1. Bildirim ve İnternet İzinlerini Ekle
+          # 1. Android Kamera ve İzinler
           m_path = 'android/app/src/main/AndroidManifest.xml'
           if os.path.exists(m_path):
               with open(m_path, 'r') as f:
                   m = f.read()
               perms = '''
               <uses-permission android:name=\"android.permission.INTERNET\"/>
+              <uses-permission android:name=\"android.permission.CAMERA\"/>
               <uses-permission android:name=\"android.permission.VIBRATE\"/>
               <uses-permission android:name=\"android.permission.RECEIVE_BOOT_COMPLETED\"/>
               <uses-permission android:name=\"android.permission.SCHEDULE_EXACT_ALARM\"/>
@@ -52,7 +53,7 @@ jobs:
               with open(m_path, 'w') as f:
                   f.write(m)
 
-          # 2. Desugaring (Java 8 Zaman Desteği) Ayarını Aç
+          # 2. Desugaring Ayarı
           g_path = 'android/app/build.gradle' if os.path.exists('android/app/build.gradle') else ('android/app/build.gradle.kts' if os.path.exists('android/app/build.gradle.kts') else None)
           if g_path:
               with open(g_path, 'r') as f:
@@ -71,6 +72,15 @@ jobs:
                       g += \"\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'\n}\n\"
               with open(g_path, 'w') as f:
                   f.write(g)
+
+          # 3. iPhone Safari Canlı Kamera Motorunu (ZXing) Ekle:
+          w_path = 'web/index.html'
+          if os.path.exists(w_path):
+              with open(w_path, 'r') as f:
+                  w = f.read()
+              w = w.replace('<head>', '<head>\n  <script src=\"https://unpkg.com/@zxing/library@latest\"></script>')
+              with open(w_path, 'w') as f:
+                  f.write(w)
           "
 
       - run: flutter pub get
