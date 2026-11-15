@@ -2449,5 +2449,3 @@ Widget arslanogluGroupFooter() {
     ),
   );
 }
-```
-  
