@@ -105,13 +105,11 @@ Future<void> telefonlaAra(BuildContext context, String tel) async {
 void akilliAramaPenceresi(BuildContext context, String adSoyad, String veliTel, String ogrenciTel) {
   final temizOgrTel = ogrenciTel.trim();
 
-  // Öğrenci telefonu yoksa (Ortaokul modu): Direkt veliyi ara
   if (temizOgrTel.isEmpty || temizOgrTel == "-" || temizOgrTel == "null") {
     telefonlaAra(context, veliTel);
     return;
   }
 
-  // Öğrenci telefonu varsa (Lise modu): Seçenekli pencere aç
   showModalBottomSheet(
     context: context,
     backgroundColor: const Color(0xFF1E293B),
@@ -247,7 +245,6 @@ class AnaGecisEkrani extends StatefulWidget {
 }
 
 class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
-  // 0: ÖĞRENCİ NFC (VARSAYILAN), 1: VELİ, 2: ŞOFÖR, 3: ÖĞRETMEN
   int aktifSayfa = 0;
 
   bool veriYukleniyor = true;
@@ -712,7 +709,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
                           Text(veliOgrencisi!.adSoyad, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                           const SizedBox(height: 2),
                           Text("No: ${veliOgrencisi!.id} | Sınıf: ${veliOgrencisi!.sinif}", style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
-                          Text("Durak: ${veliOgrencisi!.koyDurak}", style: const TextStyle(fontSize: 12, color: Colors.tealAccent, fontWeight: FontWeight.bold)),
+                          Text("Bindiği Durak: ${veliOgrencisi!.koyDurak}", style: const TextStyle(fontSize: 12, color: Colors.tealAccent, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -1056,7 +1053,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
   late NobetciOgretmen? seciliOgretmen;
   final TextEditingController pinController = TextEditingController();
 
-  // 🔍 GENEL ÖĞRENCİ ARAMA KUTUSU (Tüm Okulda Arama)
   final TextEditingController genelAramaController = TextEditingController();
   String aramaKelimesi = "";
 
@@ -1113,7 +1109,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     final ogretmenGunu = seciliOgretmen!.gun.trim().toLowerCase();
     final ogretmenAdi = seciliOgretmen!.adSoyad.trim().toLowerCase();
 
-    // İdareciler her gün girebilir:
     final bool idareciMi = ogretmenAdi.contains("müdür") || ogretmenAdi.contains("idare") || ogretmenGunu.contains("her gün");
 
     if (!idareciMi && ogretmenGunu != bugun) {
@@ -1152,7 +1147,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     });
   }
 
-  // 🚍 SERVİS DOĞRULAMA (QR / MANUEL)
   void servisQrPenceresiAc({required bool sabahMi, required ServisHatti aktifServis}) {
     final plaka = aktifServis.plaka;
 
@@ -1251,7 +1245,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     );
   }
 
-  // ⚠️ AKŞAM ÇIKIŞINDA "EKSİK ÖĞRENCİ" KONTROLÜ & "BİLGİMİZ VAR" BUTONU
   void aksamCikisKontrolEt(ServisHatti aktifServis) {
     final sabahGelenler = aktifServis.ogrenciler.where((o) => o.adim >= 2).toList();
     final aksamBinmeyenler = sabahGelenler.where((o) => o.adim < 3).toList();
@@ -1302,7 +1295,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(c),
-              child: const Text("İptal (Öğrenciyi Ara)", style: TextStyle(color: Colors.grey)),
+              child: const Text("İptal", style: TextStyle(color: Colors.grey)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade800, foregroundColor: Colors.white),
@@ -1373,13 +1366,12 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     });
   }
 
-  // 🎨 GÖRSEL RENK MOTORU (Beyaz ➔ Mavi ➔ Turuncu ➔ Yeşil)
   Color _kartRengi(int adim) {
-    if (adim == 1) return const Color(0xFFE0F2FE); // Sabah Bindi (Pastel Mavi)
-    if (adim == 2) return const Color(0xFFFFEDD5); // Okulda İndi (Pastel Turuncu)
-    if (adim == 3) return const Color(0xFFDCFCE7); // Akşam Bindi (Pastel Yeşil)
-    if (adim >= 4) return const Color(0xFFCCFBF1); // Eve Ulaştı (Koyu Yeşil Onay)
-    return Colors.white; // Başlangıç (Beyaz)
+    if (adim == 1) return const Color(0xFFE0F2FE); // Sabah Bindi (Mavi)
+    if (adim == 2) return const Color(0xFFFFEDD5); // Okulda İndi (Turuncu)
+    if (adim == 3) return const Color(0xFFDCFCE7); // Akşam Bindi (Yeşil)
+    if (adim >= 4) return const Color(0xFFCCFBF1); // Eve Vardı (Koyu Yeşil)
+    return Colors.white;
   }
 
   Color _kartKenarlikRengi(int adim) {
@@ -1498,7 +1490,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     final bool aksamHareket = durumMap['aksamHareket'] == true;
     final String aksamHareketSaat = durumMap['aksamHareketSaat'] ?? '';
 
-    // GENEL ARAMA FİLTRESİ
     final arananOgrenciler = aramaKelimesi.isEmpty
         ? (aktifServis?.ogrenciler ?? [])
         : widget.tumOgrenciler.where((o) {
@@ -1614,14 +1605,14 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                   ),
                 ),
 
-                // 🚍 3. SERVİS GELİŞ & ÇIKIŞ PROTOKOLÜ (SABAH & AKŞAM KİLİTLİ)
+                // 🚍 3. SERVİS GELİŞ & ÇIKIŞ PROTOKOLÜ
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.teal.shade200)),
                   child: Row(
                     children: [
-                      // Buton 1: Sabah Servis Geldi (QR)
+                      // Buton 1: Sabah Servis Geldi
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -1636,7 +1627,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                       ),
                       const SizedBox(width: 4),
 
-                      // Buton 2: Sabah Yoklaması Bitti (GELMEDEN BASILAMAZ!)
+                      // Buton 2: Sabah Yoklaması Bitti
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -1668,7 +1659,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                       ),
                       const SizedBox(width: 4),
 
-                      // Buton 3: Akşam Servis Çıkış (EKSİK ÖĞRENCİ KALKANI KONTROLLÜ)
+                      // Buton 3: Akşam Servis Çıkış (Eksik Öğrenci Kalkanı Kontrollü)
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -1713,7 +1704,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                   ),
                 ),
 
-                // Öğrenci Listesi / Genel Arama Sonuçları
+                // Öğrenci Listesi / Arama Sonuçları
                 Expanded(
                   child: arananOgrenciler.isEmpty
                       ? const Center(child: Text("Öğrenci bulunamadı.", style: TextStyle(color: Colors.grey, fontSize: 12)))
@@ -1728,7 +1719,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                             return Card(
                               elevation: 1,
                               margin: const EdgeInsets.only(bottom: 6),
-                              color: _kartRengi(ogr.adim),
+                              color: _kartRengi(ogr.adim), // Renk Geçişi
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                                 side: BorderSide(color: _kartKenarlikRengi(ogr.adim), width: 1.2),
@@ -1756,7 +1747,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                                         ],
                                       ),
                                     ),
-                                    // SAĞ TARAF: IŞINLANMA VE İŞLEM BUTONLARI
                                     Row(
                                       children: [
                                         if (baskaServisteMi)
@@ -1825,6 +1815,18 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
         ),
       ),
     );
+  }
+
+  Color _durumRengi(String durum) {
+    if (durum == 'serviste') return Colors.green;
+    if (durum == 'indi') return Colors.blue;
+    return Colors.grey;
+  }
+
+  IconData _durumIkonu(String durum) {
+    if (durum == 'serviste') return Icons.directions_bus;
+    if (durum == 'indi') return Icons.school;
+    return Icons.person_outline;
   }
 }
 
@@ -2318,8 +2320,7 @@ Widget arslanogluGroupFooter() {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: const [
             Text("ARSLANOĞLU", style: TextStyle(color: Color(0xFFD4AF37), fontWeight: FontWeight.w900, fontSize: 10, letterSpacing: 2.0)),
-            Text("G R O U P", style: TextStyle(color: Color(0xFFE5C158), fontWeight: FontWeight.bold, fontSize: 6.5, letterSpacing: 3.5),
-            ),
+            Text("G R O U P", style: TextStyle(color: Color(0xFFE5C158), fontWeight: FontWeight.bold, fontSize: 6.5, letterSpacing: 3.5)),
           ],
         ),
         const SizedBox(width: 12),
