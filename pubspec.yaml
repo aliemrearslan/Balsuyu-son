@@ -12,9 +12,6 @@ dependencies:
   http: ^1.2.0
   shared_preferences: ^2.2.3
   url_launcher: ^6.3.0
-  flutter_local_notifications: ^17.2.1
-  timezone: ^0.9.4
-  mobile_scanner: ^5.2.3
 
 flutter:
   uses-material-design: true
