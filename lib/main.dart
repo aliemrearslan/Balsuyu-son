@@ -1,21 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:timezone/data/latest_all.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  if (!kIsWeb) {
-    await BildirimServisi.baslat();
-  }
   runApp(const BalsuyuServisApp());
 }
 
@@ -30,7 +21,7 @@ const String googleTabloId = "1_aBRUYObM5gMUrPTKhnegPquw2UwanFGY-9l8sGXIyE";
 const String excelIndirmeLinki =
     "https://docs.google.com/spreadsheets/d/$googleTabloId/export?format=xlsx";
 
-// Google E-Tabloya Yoklama ve Acil Durum Yazan Fonksiyon (POST)
+// Google E-Tabloya Veri Gönderen Fonksiyon (POST)
 Future<void> googleTabloyaGonder({
   required String plaka,
   required String koy,
@@ -105,7 +96,7 @@ Future<void> telefonlaAra(BuildContext context, String tel) async {
     }
   } catch (_) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Arama başlatılamadı. Numara: $tel")),
+      SnackBar(content: Text("Arama başlatılamadı: $tel")),
     );
   }
 }
@@ -114,11 +105,13 @@ Future<void> telefonlaAra(BuildContext context, String tel) async {
 void akilliAramaPenceresi(BuildContext context, String adSoyad, String veliTel, String ogrenciTel) {
   final temizOgrTel = ogrenciTel.trim();
 
+  // Öğrenci telefonu yoksa (Ortaokul modu): Direkt veliyi ara
   if (temizOgrTel.isEmpty || temizOgrTel == "-" || temizOgrTel == "null") {
     telefonlaAra(context, veliTel);
     return;
   }
 
+  // Öğrenci telefonu varsa (Lise modu): Seçenekli pencere aç
   showModalBottomSheet(
     context: context,
     backgroundColor: const Color(0xFF1E293B),
@@ -178,108 +171,6 @@ class NobetciOgretmen {
   final String adSoyad;
   final String pin;
   NobetciOgretmen({required this.gun, required this.adSoyad, required this.pin});
-}
-
-class ServisZamanKontrolu {
-  static bool get sabahIzinliMi {
-    final now = DateTime.now();
-    final dakika = now.hour * 60 + now.minute;
-    return dakika <= (8 * 60 + 30);
-  }
-
-  static bool get aksamIzinliMi {
-    final now = DateTime.now();
-    final dakika = now.hour * 60 + now.minute;
-    final baslangic = 15 * 60;
-    final bitis = 18 * 60 + 30;
-    return dakika >= baslangic && dakika <= bitis;
-  }
-
-  static String? kilitKontrolu(int adim) {
-    if (adim == 0 || adim == 1) {
-      if (!sabahIzinliMi) {
-        return "⏰ Sabah biniş/iniş süresi 08:30'da dolmuştur! Sistem akşam 15:00'da açılacaktır.";
-      }
-    } else if (adim == 2 || adim == 3) {
-      final now = DateTime.now();
-      final dakika = now.hour * 60 + now.minute;
-      if (dakika < 15 * 60) {
-        return "⏰ Akşam servisi henüz başlamadı! Sistem saat 15:00'da açılacaktır.";
-      } else if (dakika > (18 * 60 + 30)) {
-        return "⏰ Akşam biniş/iniş süresi 18:30'da dolmuştur! Sistem kilitlidir.";
-      }
-    }
-    return null;
-  }
-}
-
-class BildirimServisi {
-  static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
-
-  static Future<void> baslat() async {
-    if (kIsWeb) return;
-    tz.initializeTimeZones();
-    try {
-      tz.setLocalLocation(tz.getLocation('Europe/Istanbul'));
-    } catch (_) {}
-
-    const AndroidInitializationSettings androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-
-    const InitializationSettings settings =
-        InitializationSettings(android: androidSettings);
-
-    await _plugin.initialize(settings);
-
-    await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
-  }
-
-  static Future<void> _alarmKur(int id, String baslik, String govde, int saat, int dakika) async {
-    if (kIsWeb) return;
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, saat, dakika);
-    if (scheduled.isBefore(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
-    }
-
-    await _plugin.zonedSchedule(
-      id,
-      baslik,
-      govde,
-      scheduled,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'servis_hatirlatici_kanali',
-          'Servis Hatırlatıcıları',
-          importance: Importance.max,
-          priority: Priority.high,
-          playSound: true,
-        ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
-    );
-  }
-
-  static Future<void> ogrenciHatirlatmalariKur() async {
-    if (kIsWeb) return;
-    await _alarmKur(101, "Balsuyu MTAL - Servis Biniş", "Servise bindiğinizi doğrulayınız! 🚌", 7, 10);
-    await _alarmKur(102, "Balsuyu MTAL - Okula Varış", "Okula vardınız, indiğinizi doğrulayınız! 🏫", 7, 45);
-    await _alarmKur(103, "Balsuyu MTAL - Akşam Çıkış", "Servise binişinizi onaylayınız! 🎒", 15, 30);
-  }
-
-  static Future<void> ogretmenHatirlatmalariKur() async {
-    if (kIsWeb) return;
-    await _alarmKur(201, "Balsuyu MTAL - Nöbetçi Öğretmen", "Servisi kontrol etmeniz gerekiyor. 📋", 7, 30);
-    await _alarmKur(202, "Balsuyu MTAL - Servis Yoklama", "Servis işlemlerini tamamlamayı unutmayınız! ⚠️", 7, 50);
-    await _alarmKur(203, "Balsuyu MTAL - Gün Sonu Kapanış", "İşlemleri tamamlamayı unutmayınız! 🏁", 18, 0);
-  }
-
-  static Future<void> ogrenciAlarmlariKur() async => ogrenciHatirlatmalariKur();
-  static Future<void> ogretmenAlarmlariKur() async => ogretmenHatirlatmalariKur();
 }
 
 class Ogrenci {
@@ -378,7 +269,6 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
       if (response.statusCode == 200) {
         final hamVeri = jsonDecode(response.body);
 
-        // 1. Nöbetçiler
         final List<NobetciOgretmen> yuklenenNobetciler = [];
         if (hamVeri['nobetciler'] != null) {
           for (var item in hamVeri['nobetciler']) {
@@ -400,7 +290,6 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
           bugununNobetcisi = yuklenenNobetciler.isNotEmpty ? yuklenenNobetciler.first : null;
         }
 
-        // 2. Öğrenciler
         final List<Ogrenci> yuklenenOgrenciler = [];
         if (hamVeri['ogrenciler'] != null) {
           for (var item in hamVeri['ogrenciler']) {
@@ -422,7 +311,6 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
           }
         }
 
-        // 3. Servisler
         final List<ServisHatti> yuklenenServisler = [];
         if (hamVeri['servisler'] != null) {
           for (var item in hamVeri['servisler']) {
@@ -451,11 +339,11 @@ class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
           hataMesaji = null;
         });
       } else {
-        throw Exception("Sunucu yanıt vermedi: ${response.statusCode}");
+        throw Exception("Sunucu yanıt vermedi");
       }
     } catch (e) {
       setState(() {
-        hataMesaji = "Veriler alınırken bir sorun oluştu: $e";
+        hataMesaji = "Veriler alınamadı: $e";
         veriYukleniyor = false;
       });
     }
@@ -696,10 +584,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
       telController.clear();
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: Colors.red,
-          content: Text("Öğrenci numarası veya kayıtlı veli telefonu hatalı!"),
-        ),
+        const SnackBar(backgroundColor: Colors.red, content: Text("Numara veya kayıtlı veli telefonu hatalı!")),
       );
     }
   }
@@ -728,7 +613,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
                 children: [
                   mebLogoRozeti(),
                   const SizedBox(height: 16),
-                  const Text("BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ", textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.3)),
+                  const Text("BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ", textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
                   const SizedBox(height: 6),
                   const Text("Veli Bilgilendirme ve Takip Girişi", style: TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.w500)),
                   const SizedBox(height: 28),
@@ -747,7 +632,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
                           decoration: InputDecoration(hintText: "Örn: 101", hintStyle: const TextStyle(color: Colors.white24), filled: true, fillColor: const Color(0xFF0F172A), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
                         ),
                         const SizedBox(height: 16),
-                        const Text("Sistemde Kayıtlı Telefon Numaranız:", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        const Text("Kayıtlı Telefon Numaranız:", style: TextStyle(color: Colors.grey, fontSize: 12)),
                         const SizedBox(height: 8),
                         TextField(
                           controller: telController,
@@ -757,7 +642,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
                         ),
                         const SizedBox(height: 20),
                         ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal.shade700, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal.shade700, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 46)),
                           icon: const Icon(Icons.family_restroom),
                           label: const Text("Öğrencimi Görüntüle", style: TextStyle(fontWeight: FontWeight.bold)),
                           onPressed: veliGirisYap,
@@ -792,7 +677,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("BALSUYU MTAL — VELİ TAKİP", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 0.3), overflow: TextOverflow.ellipsis),
+                  const Text("BALSUYU MTAL — VELİ TAKİP", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
                   Text("Nöbetçi: ${widget.aktifNobetci?.adSoyad ?? 'Öğretmen'}", style: const TextStyle(fontSize: 10, color: Colors.tealAccent)),
                 ],
               ),
@@ -827,7 +712,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
                           Text(veliOgrencisi!.adSoyad, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                           const SizedBox(height: 2),
                           Text("No: ${veliOgrencisi!.id} | Sınıf: ${veliOgrencisi!.sinif}", style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
-                          Text("Bindiği Durak: ${veliOgrencisi!.koyDurak}", style: const TextStyle(fontSize: 12, color: Colors.tealAccent, fontWeight: FontWeight.bold)),
+                          Text("Durak: ${veliOgrencisi!.koyDurak}", style: const TextStyle(fontSize: 12, color: Colors.tealAccent, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -1067,7 +952,7 @@ class _SoforPaneliState extends State<SoforPaneli> {
                         ),
                         const SizedBox(height: 20),
                         ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade700, foregroundColor: Colors.black87, minimumSize: const Size(double.infinity, 46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade700, foregroundColor: Colors.black87, minimumSize: const Size(double.infinity, 46)),
                           icon: const Icon(Icons.directions_bus_rounded),
                           label: const Text("Servisimi Aç ve Başla", style: TextStyle(fontWeight: FontWeight.bold)),
                           onPressed: soforGirisYap,
@@ -1184,7 +1069,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     super.initState();
     seciliOgretmen = widget.varsayilanNobetci;
     kayitliOgretmeniYukle();
-    BildirimServisi.ogretmenHatirlatmalariKur();
   }
 
   @override
@@ -1283,17 +1167,17 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
           children: [
             Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.teal, borderRadius: BorderRadius.circular(10))),
             const SizedBox(height: 14),
-            Icon(Icons.qr_code_scanner, color: Colors.tealAccent, size: 40),
+            const Icon(Icons.qr_code_scanner, color: Colors.tealAccent, size: 40),
             const SizedBox(height: 8),
             Text(
               sabahMi ? "🚍 Sabah Servis Girişi ($plaka)" : "🚀 Akşam Servis Çıkışı ($plaka)",
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
             ),
             const SizedBox(height: 6),
-            Text(
+            const Text(
               "Servis camındaki QR kodu okutunuz veya manuel onaylayınız.",
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70, fontSize: 11),
+              style: TextStyle(color: Colors.white70, fontSize: 11),
             ),
             const SizedBox(height: 18),
             ElevatedButton.icon(
@@ -1303,7 +1187,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                 minimumSize: const Size(double.infinity, 46),
               ),
               icon: const Icon(Icons.qr_code_scanner, size: 18),
-              label: const Text("1. QR Kodu Okutarak Doğrula (Kamera)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+              label: const Text("1. QR Kodu Okutarak Doğrula", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
               onPressed: () {
                 Navigator.pop(ctx);
                 _servisKaydet(sabahMi: sabahMi, aktifServis: aktifServis, qrIleMi: true);
@@ -1391,7 +1275,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                "Sabah ${aktifServis.plaka} servisiyle okula gelen ancak şu an serviste olmayan öğrenciler var:",
+                "Sabah ${aktifServis.plaka} servisiyle gelen ancak şu an serviste olmayan öğrenciler var:",
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
               const SizedBox(height: 10),
@@ -1702,7 +1586,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                   ),
                 ),
 
-                // 🔍 2. TÜM OKULDA GENEL ARAMA ÇUBUĞU (Öğrenci No veya İsimle)
+                // 🔍 2. TÜM OKULDA GENEL ARAMA ÇUBUĞU
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
                   height: 40,
@@ -1844,7 +1728,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                             return Card(
                               elevation: 1,
                               margin: const EdgeInsets.only(bottom: 6),
-                              color: _kartRengi(ogr.adim), // 🎨 PASTEL RENK GEÇİŞİ
+                              color: _kartRengi(ogr.adim),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                                 side: BorderSide(color: _kartKenarlikRengi(ogr.adim), width: 1.2),
@@ -1879,7 +1763,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                                           ElevatedButton(
                                             style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3), minimumSize: const Size(60, 26)),
                                             onPressed: () {
-                                              // 🚀 SERVİSİNE IŞINLAN!
                                               final oIndex = widget.servisler.indexWhere((s) => normalizePlaka(s.plaka) == normalizePlaka(buOgrencininPlakasi));
                                               if (oIndex != -1) {
                                                 setState(() {
@@ -1979,7 +1862,6 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   void initState() {
     super.initState();
     kayitliOgrenciyiYukle();
-    BildirimServisi.ogrenciAlarmlariKur();
   }
 
   @override
@@ -2046,7 +1928,6 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   }
 
   Future<void> ogrenciGirisYap() async {
-    BildirimServisi.ogrenciAlarmlariKur();
     final girilenNo = noController.text.trim();
     final girilenSifre = sifreController.text.trim();
 
@@ -2099,11 +1980,11 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
               children: [
                 Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
                 SizedBox(width: 8),
-                Text("ACİL DURUM MERKEZİ", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 17, letterSpacing: 1)),
+                Text("ACİL DURUM MERKEZİ", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 17)),
               ],
             ),
             const SizedBox(height: 8),
-            const Text("Güvenliğiniz için lütfen durumunuza uygun butona basınız.", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, fontSize: 12)),
+            const Text("Lütfen durumunuza uygun butona basınız.", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, fontSize: 12)),
             const SizedBox(height: 20),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50)),
@@ -2151,7 +2032,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text("İhbar İletildi ✅", style: TextStyle(color: Colors.greenAccent, fontSize: 16)),
         content: const Text(
-          "Acil durum çağrınız Okul Yönetimine ve Nöbetçi Öğretmene anında iletildi.\n\nLütfen sakin olun, araçtan ayrılmayın. Yönetim sizinle derhal iletişime geçecektir.",
+          "Acil durum çağrınız Okul Yönetimine iletildi.\n\nLütfen sakin olun, araçtan ayrılmayın. Yönetim sizinle derhal iletişime geçecektir.",
           style: TextStyle(color: Colors.white70, fontSize: 13),
         ),
         actions: [
@@ -2169,9 +2050,9 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
 
     String tabloyaGidecekMesaj = "";
     if (gunlukIslemAdimi == 0) tabloyaGidecekMesaj = "SABAH BİNDİ";
-    if (gunlukIslemAdimi == 1) tabloyaGidecekMesaj = "SABAH İNDİ (OKUL)";
-    if (gunlukIslemAdimi == 2) tabloyaGidecekMesaj = "AKŞAM BİNDİ (ÇIKIŞ)";
-    if (gunlukIslemAdimi == 3) tabloyaGidecekMesaj = "AKŞAM İNDİ (KÖY)";
+    if (gunlukIslemAdimi == 1) tabloyaGidecekMesaj = "SABAH İNDİ";
+    if (gunlukIslemAdimi == 2) tabloyaGidecekMesaj = "AKŞAM BİNDİ";
+    if (gunlukIslemAdimi == 3) tabloyaGidecekMesaj = "AKŞAM İNDİ";
 
     setState(() {
       sonIslemDurumu = islemTuru;
@@ -2289,7 +2170,6 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
                             ],
                           ),
                         ),
-                        // 🚨 SOS BUTONU
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), minimumSize: const Size(50, 30)),
                           onPressed: acilDurumPenceresiAc,
@@ -2359,7 +2239,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
                 child: const Center(child: Icon(Icons.nfc_rounded, size: 70, color: Colors.tealAccent)),
               ),
               const SizedBox(height: 14),
-              const Text("NFC Okuyucu Hazır", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+              const Text("NFC Okuyucu Hazır", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
             ] else ...[
               Icon(Icons.check_circle, size: 75, color: sonIslemDurumu == 'bindi' ? Colors.greenAccent : Colors.blueAccent),
               const SizedBox(height: 12),
@@ -2438,7 +2318,8 @@ Widget arslanogluGroupFooter() {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: const [
             Text("ARSLANOĞLU", style: TextStyle(color: Color(0xFFD4AF37), fontWeight: FontWeight.w900, fontSize: 10, letterSpacing: 2.0)),
-            Text("G R O U P", style: TextStyle(color: Color(0xFFE5C158), fontWeight: FontWeight.bold, fontSize: 6.5, letterSpacing: 3.5)),
+            Text("G R O U P", style: TextStyle(color: Color(0xFFE5C158), fontWeight: FontWeight.bold, fontSize: 6.5, letterSpacing: 3.5),
+            ),
           ],
         ),
         const SizedBox(width: 12),
