@@ -21,6 +21,10 @@ const String googleTabloId = "1_aBRUYObM5gMUrPTKhnegPquw2UwanFGY-9l8sGXIyE";
 const String excelIndirmeLinki =
     "https://docs.google.com/spreadsheets/d/$googleTabloId/export?format=xlsx";
 
+// 📄 RESMİ MEB İMZALI PDF İNDİRME BAĞLANTISI
+const String resmiPdfIndirmeLinki =
+    "https://script.google.com/macros/s/AKfycbxW2SBjMD8KZ3NnjyMr_SdgHd1FEQyvsPMUBg4umDE51qRBAiiisa4lS2QURl3K86Y0/exec?islem=pdf_indir";
+
 // Google E-Tabloya Veri Gönderen Fonksiyon (POST)
 Future<void> googleTabloyaGonder({
   required String plaka,
@@ -101,7 +105,7 @@ Future<void> telefonlaAra(BuildContext context, String tel) async {
   }
 }
 
-// 📞 AKILLI ARAMA PENCERESİ (Lise / Ortaokul Otomatik Ayrımı)
+// 📞 AKILLI ARAMA PENCERESİ
 void akilliAramaPenceresi(BuildContext context, String adSoyad, String veliTel, String ogrenciTel) {
   final temizOgrTel = ogrenciTel.trim();
 
@@ -245,6 +249,7 @@ class AnaGecisEkrani extends StatefulWidget {
 }
 
 class _AnaGecisEkraniState extends State<AnaGecisEkrani> {
+  // 0: ÖĞRENCİ NFC, 1: VELİ, 2: ŞOFÖR, 3: ÖĞRETMEN
   int aktifSayfa = 0;
 
   bool veriYukleniyor = true;
@@ -610,7 +615,7 @@ class _VeliPaneliState extends State<VeliPaneli> {
                 children: [
                   mebLogoRozeti(),
                   const SizedBox(height: 16),
-                  const Text("BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ", textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  const Text("BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ", textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.3)),
                   const SizedBox(height: 6),
                   const Text("Veli Bilgilendirme ve Takip Girişi", style: TextStyle(color: Colors.tealAccent, fontSize: 12, fontWeight: FontWeight.w500)),
                   const SizedBox(height: 28),
@@ -1023,7 +1028,7 @@ class _SoforPaneliState extends State<SoforPaneli> {
 }
 
 // ---------------------------------------------------------------------------
-// 3. EKRAN: ÖĞRETMEN CANLI TAKİP PANELİ (ARAMA, RENKLİ KARTLAR, EKSİK KALKANI)
+// 3. EKRAN: ÖĞRETMEN CANLI TAKİP PANELİ (ARAMA, IŞINLANMA, RESMİ PDF İNDİRME)
 // ---------------------------------------------------------------------------
 class OgretmenPaneli extends StatefulWidget {
   final List<ServisHatti> servisler;
@@ -1268,7 +1273,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                "Sabah ${aktifServis.plaka} servisiyle gelen ancak şu an serviste olmayan öğrenciler var:",
+                "Sabah ${aktifServis.plaka} servisiyle okula gelen ancak şu an serviste olmayan öğrenciler var:",
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
               const SizedBox(height: 10),
@@ -1490,6 +1495,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     final bool aksamHareket = durumMap['aksamHareket'] == true;
     final String aksamHareketSaat = durumMap['aksamHareketSaat'] ?? '';
 
+    // GENEL ARAMA FİLTRESİ (Tüm Okulda Arama)
     final arananOgrenciler = aramaKelimesi.isEmpty
         ? (aktifServis?.ogrenciler ?? [])
         : widget.tumOgrenciler.where((o) {
@@ -1519,6 +1525,17 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
           ],
         ),
         actions: [
+          // 📄 RESMİ İMZALI PDF İNDİRME BUTONU
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.amberAccent, size: 22),
+            tooltip: 'Günün İmzalı Resmi PDF Raporunu İndir',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Resmi MEB İmzalı PDF Raporu Hazırlanıyor... 📄")),
+              );
+              telefonlaAra(context, resmiPdfIndirmeLinki);
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, size: 20),
             tooltip: 'Çıkış',
@@ -1605,14 +1622,14 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                   ),
                 ),
 
-                // 🚍 3. SERVİS GELİŞ & ÇIKIŞ PROTOKOLÜ
+                // 🚍 3. SERVİS GELİŞ & ÇIKIŞ PROTOKOLÜ (SABAH & AKŞAM KİLİTLİ)
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.teal.shade200)),
                   child: Row(
                     children: [
-                      // Buton 1: Sabah Servis Geldi
+                      // Buton 1: Sabah Servis Geldi (QR)
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -1627,7 +1644,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                       ),
                       const SizedBox(width: 4),
 
-                      // Buton 2: Sabah Yoklaması Bitti
+                      // Buton 2: Sabah Yoklaması Bitti (GELMEDEN BASILAMAZ!)
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -1659,7 +1676,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                       ),
                       const SizedBox(width: 4),
 
-                      // Buton 3: Akşam Servis Çıkış (Eksik Öğrenci Kalkanı Kontrollü)
+                      // Buton 3: Akşam Servis Çıkış (EKSİK ÖĞRENCİ KALKANI KONTROLLÜ)
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -1704,7 +1721,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                   ),
                 ),
 
-                // Öğrenci Listesi / Arama Sonuçları
+                // Öğrenci Listesi / Genel Arama Sonuçları
                 Expanded(
                   child: arananOgrenciler.isEmpty
                       ? const Center(child: Text("Öğrenci bulunamadı.", style: TextStyle(color: Colors.grey, fontSize: 12)))
@@ -1719,7 +1736,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                             return Card(
                               elevation: 1,
                               margin: const EdgeInsets.only(bottom: 6),
-                              color: _kartRengi(ogr.adim), // Renk Geçişi
+                              color: _kartRengi(ogr.adim),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                                 side: BorderSide(color: _kartKenarlikRengi(ogr.adim), width: 1.2),
@@ -1815,18 +1832,6 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
         ),
       ),
     );
-  }
-
-  Color _durumRengi(String durum) {
-    if (durum == 'serviste') return Colors.green;
-    if (durum == 'indi') return Colors.blue;
-    return Colors.grey;
-  }
-
-  IconData _durumIkonu(String durum) {
-    if (durum == 'serviste') return Icons.directions_bus;
-    if (durum == 'indi') return Icons.school;
-    return Icons.person_outline;
   }
 }
 
@@ -2331,4 +2336,3 @@ Widget arslanogluGroupFooter() {
     ),
   );
 }
-
