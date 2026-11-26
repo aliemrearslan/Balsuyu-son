@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -490,6 +491,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   String? token;
   Ogrenci? girisYapanOgrenci;
   ServisHatti? ogrenciServisi;
+  Map<String, String> servisDurumu = {};
   String aktifNobetciAd = 'Öğretmen';
   bool yukleniyor = false;
   bool islemYapiliyor = false;
@@ -504,9 +506,12 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   void initState() {
     super.initState();
     kayitliOturumuYukle();
-    otoYenileyici = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (mounted &&
-          token != null &&
+    otoYenileyici = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!mounted) return;
+      if (girisYapanOgrenci != null) {
+        setState(() {});
+      }
+      if (token != null &&
           girisYapanOgrenci != null &&
           !yukleniyor &&
           !islemYapiliyor) {
@@ -526,9 +531,17 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   void veriyiUygula(Map<String, dynamic> veri) {
     final ogrList = ogrencileriCoz(veri['ogrenciler']);
     final srvList = servisleriCoz(veri['servisler'], ogrList);
+    final rawSrvDurum = veri['servisDurumu'];
+    final Map<String, String> yeniSrvDurum = {};
+    if (rawSrvDurum is Map) {
+      rawSrvDurum.forEach((k, v) {
+        yeniSrvDurum[k.toString()] = (v ?? '').toString();
+      });
+    }
     setState(() {
       girisYapanOgrenci = ogrList.isNotEmpty ? ogrList.first : null;
       ogrenciServisi = srvList.isNotEmpty ? srvList.first : null;
+      servisDurumu = yeniSrvDurum;
       aktifNobetciAd = aktifNobetciAdiniCoz(veri);
     });
   }
@@ -630,6 +643,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       token = null;
       girisYapanOgrenci = null;
       ogrenciServisi = null;
+      servisDurumu = {};
     });
   }
 
@@ -792,6 +806,146 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
     }
   }
 
+  Map<String, dynamic> _zamanDurumu(int adim) {
+    final trSimdi = DateTime.now().toUtc().add(const Duration(hours: 3));
+    final gun = trSimdi.weekday;
+    final topDak = trSimdi.hour * 60 + trSimdi.minute;
+    final aksamBas = gun == DateTime.monday ? 17 * 60 : 15 * 60;
+    final aksamBasStr = gun == DateTime.monday ? '17:00' : '15:00';
+
+    if (adim >= 4) {
+      return {
+        'binisAcik': false,
+        'inisAcik': false,
+        'kapaliMi': false,
+        'baslik': 'Günlük İşlemler Tamam',
+        'aciklama': 'Bugünkü tüm servis adımları tamamlandı.',
+      };
+    }
+
+    if (gun == DateTime.saturday || gun == DateTime.sunday) {
+      return {
+        'binisAcik': false,
+        'inisAcik': false,
+        'kapaliMi': true,
+        'baslik': 'Hafta Sonu Kapalı',
+        'aciklama':
+            'Cumartesi ve Pazar günleri sistem kapalıdır. Pazartesi 06:30\'da açılacaktır.',
+      };
+    }
+
+    if (topDak < 390) {
+      return {
+        'binisAcik': false,
+        'inisAcik': false,
+        'kapaliMi': true,
+        'baslik': 'Sistem Kapalı',
+        'aciklama': 'Sabah Biniş 06:30 - 07:30 saatleri arasında açılacaktır.',
+      };
+    }
+
+    if (topDak >= 390 && topDak < 450) {
+      if (adim == 0) {
+        return {
+          'binisAcik': true,
+          'inisAcik': false,
+          'kapaliMi': false,
+          'baslik': 'Sabah Biniş Aktif',
+          'aciklama': '1. Sabah Köyden Biniş (06:30 - 07:30)',
+          'binisMesaj': 'SABAH BİNDİ',
+          'binisYeniAdim': 1,
+        };
+      }
+      if (adim == 1) {
+        return {
+          'binisAcik': false,
+          'inisAcik': false,
+          'kapaliMi': true,
+          'baslik': 'Sabah İniş Bekleniyor',
+          'aciklama':
+              'Sabah İndim butonu 07:30\'da açılacaktır (07:30 - 08:00).',
+        };
+      }
+      return {
+        'binisAcik': false,
+        'inisAcik': false,
+        'kapaliMi': true,
+        'baslik': 'Akşam Bekleniyor',
+        'aciklama': 'Akşam Biniş bugün $aksamBasStr\'da açılacaktır.',
+      };
+    }
+
+    if (topDak >= 450 && topDak < 480) {
+      final sabahTamamSaat = (servisDurumu['sabahTamam'] ?? '').trim();
+      final bool sabahIndirmeBitti = sabahTamamSaat.isNotEmpty;
+      if (adim <= 1 && !sabahIndirmeBitti) {
+        return {
+          'binisAcik': false,
+          'inisAcik': true,
+          'kapaliMi': false,
+          'baslik': 'Sabah İniş Aktif',
+          'aciklama': '2. Sabah Okula İniş (07:30 - 08:00)',
+          'inisMesaj': 'SABAH İNDİ',
+          'inisYeniAdim': 2,
+        };
+      }
+      final saatBilgi = (girisYapanOgrenci?.saat.isNotEmpty == true)
+          ? ' (${girisYapanOgrenci!.saat})'
+          : (sabahIndirmeBitti ? ' ($sabahTamamSaat)' : '');
+      return {
+        'binisAcik': false,
+        'inisAcik': false,
+        'kapaliMi': true,
+        'baslik': 'Okula İniş Onaylandı',
+        'aciklama':
+            'Sabah okula inişiniz kaydedildi$saatBilgi. Akşam Biniş bugün $aksamBasStr\'da açılacaktır.',
+      };
+    }
+
+    if (topDak >= 480 && topDak < aksamBas) {
+      return {
+        'binisAcik': false,
+        'inisAcik': false,
+        'kapaliMi': true,
+        'baslik': 'Sistem Kapalı',
+        'aciklama':
+            'Sistem 08:00\'da kapandı. Akşam Biniş bugün $aksamBasStr\'da açılacaktır.',
+      };
+    }
+
+    if (topDak >= aksamBas && topDak < 1080) {
+      if (adim <= 2) {
+        return {
+          'binisAcik': true,
+          'inisAcik': false,
+          'kapaliMi': false,
+          'baslik': 'Akşam Biniş Aktif',
+          'aciklama': '3. Akşam Okuldan Biniş ($aksamBasStr - 18:00)',
+          'binisMesaj': 'AKŞAM BİNDİ',
+          'binisYeniAdim': 3,
+        };
+      }
+      return {
+        'binisAcik': false,
+        'inisAcik': true,
+        'kapaliMi': false,
+        'baslik': 'Akşam İniş Aktif',
+        'aciklama': '4. Akşam Köyde İniş (18:00\'a kadar)',
+        'inisMesaj': 'AKŞAM İNDİ',
+        'inisYeniAdim': 4,
+      };
+    }
+
+    return {
+      'binisAcik': false,
+      'inisAcik': false,
+      'kapaliMi': true,
+      'baslik': 'Sistem Kapandı',
+      'aciklama':
+          'Sistem 18:00 itibarıyla tamamen kapandı. Bir sonraki okul günü 06:30\'da açılacaktır.',
+    };
+  }
+
   Future<void> nfcIslemYap(String islemTuru) async {
     if (girisYapanOgrenci == null || token == null || islemYapiliyor) return;
     final adim = girisYapanOgrenci!.adim;
@@ -805,36 +959,35 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       return;
     }
 
+    final zaman = _zamanDurumu(adim);
     String tabloyaGidecekMesaj = '';
     String yeniDurum = '';
+    int hedefAdim = adim + 1;
+
     if (islemTuru == 'bindi') {
-      if (adim == 0) {
-        tabloyaGidecekMesaj = 'SABAH BİNDİ';
+      if (zaman['binisAcik'] == true) {
+        tabloyaGidecekMesaj = (zaman['binisMesaj'] ?? 'SABAH BİNDİ').toString();
         yeniDurum = 'serviste';
-      } else if (adim == 2) {
-        tabloyaGidecekMesaj = 'AKŞAM BİNDİ';
-        yeniDurum = 'serviste';
+        hedefAdim = (zaman['binisYeniAdim'] as int?) ?? (adim + 1);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Colors.orange,
-            content: Text('Şu an servistesiniz, önce İndim butonuna basınız.'),
+          SnackBar(
+            backgroundColor: Colors.orange.shade900,
+            content: Text((zaman['aciklama'] ?? 'Biniş şu an kapalıdır.').toString()),
           ),
         );
         return;
       }
     } else {
-      if (adim == 1) {
-        tabloyaGidecekMesaj = 'SABAH İNDİ';
+      if (zaman['inisAcik'] == true) {
+        tabloyaGidecekMesaj = (zaman['inisMesaj'] ?? 'SABAH İNDİ').toString();
         yeniDurum = 'indi';
-      } else if (adim == 3) {
-        tabloyaGidecekMesaj = 'AKŞAM İNDİ';
-        yeniDurum = 'indi';
+        hedefAdim = (zaman['inisYeniAdim'] as int?) ?? (adim + 1);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Colors.orange,
-            content: Text('Önce Bindim butonuna basmalısınız.'),
+          SnackBar(
+            backgroundColor: Colors.orange.shade900,
+            content: Text((zaman['aciklama'] ?? 'İniş şu an kapalıdır.').toString()),
           ),
         );
         return;
@@ -863,7 +1016,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
               ? res['saat'].toString()
               : '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       setState(() {
-        girisYapanOgrenci!.adim = adim + 1;
+        girisYapanOgrenci!.adim = hedefAdim;
         girisYapanOgrenci!.durum = yeniDurum;
         girisYapanOgrenci!.saat = saatFormat;
         sonIslemDurumu = islemTuru;
@@ -889,6 +1042,9 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
         );
       }
     } else {
+      if (res['yenile'] == true) {
+        veriyiYenile(sessiz: true);
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.red.shade900,
@@ -896,14 +1052,6 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
         ),
       );
     }
-  }
-
-  String _adimAciklama(int adim) {
-    if (adim == 0) return 'Sıradaki işlem: 1. Sabah Köyden Biniş';
-    if (adim == 1) return 'Sıradaki işlem: 2. Sabah Okula İniş';
-    if (adim == 2) return 'Sıradaki işlem: 3. Akşam Okuldan Biniş';
-    if (adim == 3) return 'Sıradaki işlem: 4. Akşam Köyde İniş';
-    return 'Bugünkü tüm servis adımları tamamlandı';
   }
 
   @override
@@ -1039,8 +1187,10 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
     final soforAdi = ogrenciServisi?.soforAdi ?? 'Bilinmiyor';
     final soforTel = ogrenciServisi?.soforTel ?? '-';
     final adim = girisYapanOgrenci!.adim;
-    final bool binisAktif = !islemYapiliyor && (adim == 0 || adim == 2);
-    final bool inisAktif = !islemYapiliyor && (adim == 1 || adim == 3);
+    final zaman = _zamanDurumu(adim);
+    final bool kapaliMi = zaman['kapaliMi'] == true;
+    final bool binisAktif = !islemYapiliyor && zaman['binisAcik'] == true;
+    final bool inisAktif = !islemYapiliyor && zaman['inisAcik'] == true;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -1222,8 +1372,12 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
                 height: 136,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.teal.withAlpha(24),
-                  border: Border.all(color: Colors.teal.withAlpha(110), width: 3),
+                  color: (kapaliMi ? Colors.orange : Colors.teal).withAlpha(24),
+                  border: Border.all(
+                    color:
+                        (kapaliMi ? Colors.orange : Colors.teal).withAlpha(110),
+                    width: 3,
+                  ),
                 ),
                 child: Center(
                   child: islemYapiliyor
@@ -1232,25 +1386,36 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
                       : Icon(
                           adim >= 4
                               ? Icons.verified_rounded
-                              : Icons.nfc_rounded,
+                              : (kapaliMi
+                                  ? Icons.lock_clock_rounded
+                                  : Icons.nfc_rounded),
                           size: 68,
-                          color: Colors.tealAccent,
+                          color: kapaliMi
+                              ? Colors.orangeAccent
+                              : Colors.tealAccent,
                         ),
                 ),
               ),
               const SizedBox(height: 14),
               Text(
-                adim >= 4 ? 'Günlük İşlemler Tamam' : 'NFC Okuyucu Hazır',
-                style: const TextStyle(
+                (zaman['baslik'] ?? 'NFC Okuyucu').toString(),
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: kapaliMi ? Colors.orangeAccent : Colors.white,
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
-                _adimAciklama(adim),
-                style: const TextStyle(fontSize: 12, color: Colors.tealAccent),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                child: Text(
+                  (zaman['aciklama'] ?? '').toString(),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: kapaliMi ? Colors.amber.shade200 : Colors.tealAccent,
+                  ),
+                ),
               ),
             ] else ...[
               Icon(
@@ -2505,6 +2670,40 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     });
   }
 
+  Future<void> _qrKameraAc({
+    required bool sabahMi,
+    required ServisHatti aktifServis,
+  }) async {
+    final sonuc = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ServisQrTarayiciEkrani(
+          sabahMi: sabahMi,
+          beklenenPlaka: aktifServis.plaka,
+          tumServisler: servisler,
+        ),
+      ),
+    );
+    if (!mounted || sonuc == null || sonuc['onay'] != true) return;
+
+    ServisHatti hedefServis = aktifServis;
+    if (sonuc['servis'] is ServisHatti) {
+      hedefServis = sonuc['servis'] as ServisHatti;
+      final idx = servisler.indexWhere(
+        (s) => normalizePlaka(s.plaka) == normalizePlaka(hedefServis.plaka),
+      );
+      if (idx != -1 && idx != seciliServisIndex) {
+        setState(() => seciliServisIndex = idx);
+      }
+    }
+
+    await _servisKaydet(
+      sabahMi: sabahMi,
+      aktifServis: hedefServis,
+      qrIleMi: sonuc['qr'] == true,
+    );
+  }
+
   void servisQrPenceresiAc({
     required bool sabahMi,
     required ServisHatti aktifServis,
@@ -2545,7 +2744,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Servis camındaki QR kodu doğrulayınız veya manuel onaylayınız.',
+              'Servis camındaki veya şoför ekranındaki QR kodu kamera ile okutunuz.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white70, fontSize: 11),
             ),
@@ -2558,15 +2757,14 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
               ),
               icon: const Icon(Icons.qr_code_scanner, size: 18),
               label: const Text(
-                '1. QR Kodu Doğrulayarak Onayla',
+                '1. Kamera ile QR Kodu Okut',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
               ),
               onPressed: () {
                 Navigator.pop(ctx);
-                _servisKaydet(
+                _qrKameraAc(
                   sabahMi: sabahMi,
                   aktifServis: aktifServis,
-                  qrIleMi: true,
                 );
               },
             ),
@@ -2655,6 +2853,9 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     } else if (res['yetkisiz'] == true) {
       await _yetkisizKontrol(res);
     } else {
+      if (res['yenile'] == true) {
+        verileriYenile(sessiz: true);
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.red.shade900,
@@ -2830,6 +3031,9 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     } else if (res['yetkisiz'] == true) {
       await _yetkisizKontrol(res);
     } else {
+      if (res['yenile'] == true) {
+        verileriYenile(sessiz: true);
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.red.shade900,
@@ -3463,6 +3667,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                                         ),
                                       ),
                                     );
+                                    verileriYenile(sessiz: true);
                                   } else if (res['yetkisiz'] == true) {
                                     await _yetkisizKontrol(res);
                                   } else {
@@ -3797,6 +4002,278 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class ServisQrTarayiciEkrani extends StatefulWidget {
+  final bool sabahMi;
+  final String beklenenPlaka;
+  final List<ServisHatti> tumServisler;
+
+  const ServisQrTarayiciEkrani({
+    super.key,
+    required this.sabahMi,
+    required this.beklenenPlaka,
+    required this.tumServisler,
+  });
+
+  @override
+  State<ServisQrTarayiciEkrani> createState() => _ServisQrTarayiciEkraniState();
+}
+
+class _ServisQrTarayiciEkraniState extends State<ServisQrTarayiciEkrani> {
+  final MobileScannerController _controller = MobileScannerController(
+    detectionSpeed: DetectionSpeed.normal,
+    facing: CameraFacing.back,
+  );
+  bool _tamamlandi = false;
+  bool _flasAcik = false;
+  String? _uyariMesaji;
+  ServisHatti? _farkliServis;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _qrAlgilandi(BarcodeCapture capture) {
+    if (_tamamlandi) return;
+    final beklenenNorm = normalizePlaka(widget.beklenenPlaka);
+
+    for (final barcode in capture.barcodes) {
+      final ham = (barcode.rawValue ?? '').trim();
+      if (ham.isEmpty) continue;
+
+      final temiz = normalizePlaka(
+        ham.replaceFirst(RegExp(r'^BALSUYU_SERVIS_', caseSensitive: false), ''),
+      );
+
+      if (temiz == beklenenNorm) {
+        _tamamlandi = true;
+        Navigator.pop(context, {
+          'onay': true,
+          'qr': true,
+          'plaka': widget.beklenenPlaka,
+        });
+        return;
+      }
+
+      final eslesenler = widget.tumServisler
+          .where((s) => normalizePlaka(s.plaka) == temiz)
+          .toList();
+      if (eslesenler.isNotEmpty) {
+        final bulunan = eslesenler.first;
+        if (_farkliServis?.plaka != bulunan.plaka) {
+          setState(() {
+            _farkliServis = bulunan;
+            _uyariMesaji =
+                'Farklı servis okutuldu: ${bulunan.plaka} (Beklenen: ${widget.beklenenPlaka})';
+          });
+        }
+        return;
+      }
+
+      setState(() {
+        _farkliServis = null;
+        _uyariMesaji =
+            'Geçersiz QR kod okutuldu. Lütfen servis camındaki veya şoför ekranındaki QR kodu okutunuz.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0A2E26),
+        foregroundColor: Colors.white,
+        title: Text(
+          widget.sabahMi
+              ? 'Sabah QR Tarama (${widget.beklenenPlaka})'
+              : 'Akşam QR Tarama (${widget.beklenenPlaka})',
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(
+              _flasAcik ? Icons.flash_on : Icons.flash_off,
+              color: Colors.amberAccent,
+            ),
+            tooltip: 'Flaş',
+            onPressed: () async {
+              try {
+                await _controller.toggleTorch();
+                if (mounted) setState(() => _flasAcik = !_flasAcik);
+              } catch (_) {}
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.cameraswitch_rounded,
+                color: Colors.tealAccent),
+            tooltip: 'Kamerayı Değiştir',
+            onPressed: () async {
+              try {
+                await _controller.switchCamera();
+              } catch (_) {}
+            },
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          MobileScanner(
+            controller: _controller,
+            onDetect: _qrAlgilandi,
+            errorBuilder: (context, error) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.videocam_off_rounded,
+                          color: Colors.redAccent, size: 52),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Kamera Açılamadı',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Lütfen tarayıcı/uygulama kamera iznine "İzin Ver" deyiniz.\n'
+                        'iPhone kullanıyorsanız linki WhatsApp içinden değil doğrudan Safari\'den (https://) açınız.\n'
+                        '(${error.errorCode.name})',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+          Center(
+            child: Container(
+              width: 240,
+              height: 240,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.tealAccent, width: 3),
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 16,
+            left: 16,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withAlpha(180),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.tealAccent.withAlpha(120)),
+              ),
+              child: Text(
+                'Beklenen Servis: ${widget.beklenenPlaka}\nServis QR kodunu yeşil çerçevenin içine tutunuz.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 20,
+            left: 16,
+            right: 16,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_uyariMesaji != null)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: (_farkliServis != null
+                              ? Colors.amber.shade900
+                              : Colors.red.shade900)
+                          .withAlpha(220),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          _uyariMesaji!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (_farkliServis != null) ...[
+                          const SizedBox(height: 8),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal.shade700,
+                              foregroundColor: Colors.white,
+                            ),
+                            icon: const Icon(Icons.check_circle, size: 16),
+                            label: Text(
+                              '${_farkliServis!.plaka} Servisini Onayla',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            onPressed: () {
+                              _tamamlandi = true;
+                              Navigator.pop(context, {
+                                'onay': true,
+                                'qr': true,
+                                'servis': _farkliServis,
+                              });
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.black.withAlpha(180),
+                    foregroundColor: Colors.amberAccent,
+                    side: const BorderSide(color: Colors.amberAccent),
+                    minimumSize: const Size(double.infinity, 44),
+                  ),
+                  icon: const Icon(Icons.touch_app_rounded, size: 18),
+                  label: const Text(
+                    'Kamera Okumuyor — Manuel Onayla',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  onPressed: () {
+                    _tamamlandi = true;
+                    Navigator.pop(context, {
+                      'onay': true,
+                      'qr': false,
+                      'plaka': widget.beklenenPlaka,
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
