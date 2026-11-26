@@ -31,29 +31,38 @@ jobs:
 
       - run: flutter create . --platforms=android,web
 
-      # 1. Android İnternet İzni ve Lint Denetim Kilidini Kapatma
+      # 1. Android İnternet & Kamera İzni, minSdk 23 ve Lint Ayarı
       - run: |
           python3 -c "
-          import os
+          import os, re
 
-          # Manifest İzni
+          # Manifest İzinleri (İnternet + Kamera)
           m_path = 'android/app/src/main/AndroidManifest.xml'
           if os.path.exists(m_path):
               with open(m_path, 'r') as f:
                   m = f.read()
-              m = m.replace('<application', '<uses-permission android:name=\"android.permission.INTERNET\"/>\n    <application')
+              izinler = ''
+              if 'android.permission.INTERNET' not in m:
+                  izinler += '<uses-permission android:name=\"android.permission.INTERNET\"/>\n    '
+              if 'android.permission.CAMERA' not in m:
+                  izinler += '<uses-permission android:name=\"android.permission.CAMERA\"/>\n    '
+              if izinler:
+                  m = m.replace('<application', izinler + '<application', 1)
               with open(m_path, 'w') as f:
                   f.write(m)
 
-          # Lint Hatalarını Yoksay (Derlemeyi Durdurma)
+          # minSdk 23 (mobile_scanner için) ve Lint Ayarları
           g_path = 'android/app/build.gradle' if os.path.exists('android/app/build.gradle') else ('android/app/build.gradle.kts' if os.path.exists('android/app/build.gradle.kts') else None)
           if g_path:
               with open(g_path, 'r') as f:
                   g = f.read()
               if 'build.gradle.kts' in g_path:
-                  g = g.replace('android {', 'android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }')
+                  g = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', g)
+                  g = g.replace('android {', 'android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }', 1)
               else:
-                  g = g.replace('android {', 'android {\n    lintOptions {\n        checkReleaseBuilds false\n        abortOnError false\n    }')
+                  g = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 23', g)
+                  g = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', g)
+                  g = g.replace('android {', 'android {\n    lintOptions {\n        checkReleaseBuilds false\n        abortOnError false\n    }', 1)
               with open(g_path, 'w') as f:
                   f.write(g)
           "
@@ -68,6 +77,10 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
 
       # 2. iPhone Web Derleme
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - run: flutter build web --release --base-href "/Balsuyu-son/"
       - uses: actions/upload-pages-artifact@v3
         with:
