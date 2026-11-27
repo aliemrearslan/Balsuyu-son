@@ -1,0 +1,35 @@
+================================================================================
+BALSUYU MTAL — AKILLI TAŞIMALI SERVİS YÖNETİM MERKEZİ (MASAÜSTÜ PROGRAMI)
+Kurulum ve İlk Açılış Rehberi (MacBook & Windows)
+Geliştirici: ARSLANOĞLU GROUP YAZILIM SİSTEMLERİ
+================================================================================
+
+1. MACBOOK (macOS) KURULUM VE İLK AÇILIŞ
+----------------------------------------
+1) "Balsuyu_MTAL_Yonetim_MacBook.dmg" dosyasına çift tıklayın.
+2) Açılan pencerede "Balsuyu MTAL Yonetim" simgesini "Applications" (Uygulamalar)
+   klasörüne sürükleyip bırakın.
+3) İLK AÇILIŞTA macOS güvenlik uyarısı ("Doğrulanmamış geliştirici") çıkarsa:
+   - Uygulamalar klasöründe simgeye SAĞ TIKLAYIN -> "Aç" (Open) deyin
+   - Açılan pencerede tekrar "Aç" butonuna tıklayın.
+   (Yalnızca ilk seferde sorar; sonraki açılışlarda doğrudan çift tıklamayla açılır.)
+   Not: macOS Sequoia (15+) sürümünde uyarıda "Bitti" çıkarsa:
+   Sistem Ayarları -> Gizlilik ve Güvenlik -> en altta "Yine de Aç" butonuna basın.
+
+2. WINDOWS (10 / 11) KURULUM VE İLK AÇILIŞ
+------------------------------------------
+1) "Balsuyu_MTAL_Yonetim_Windows.exe" dosyasını masaüstüne kopyalayın.
+   (Hiçbir Python veya ek program kurulumu gerektirmez — tek tıkla çalışır!)
+2) İLK AÇILIŞTA mavi Windows SmartScreen penceresi ("Windows bilgisayarınızı korudu")
+   çıkarsa:
+   - "Ek bilgi" (More info) yazısına tıklayın
+   - Altta açılan "Yine de çalıştır" (Run anyway) butonuna basın.
+   (Yalnızca ilk seferde sorar; sonra doğrudan açılır.)
+
+3. SİSTEME GİRİŞ
+----------------
+- Okul Müdürü / Müdür Yardımcısı: E-Tablo'daki 4 haneli PIN kodunuzla veya
+  yönetici şifrenizle 7/24 giriş yapabilirsiniz.
+- İnternet bağlantısı gereklidir (Google Bulut ile 6 saniyede bir canlı senkron).
+- Servis QR Etiketleri: "Canlı Takip" veya "Servis Yönetimi" sekmesinden
+  tek tıkla A4 yatay PVC/yapıştırma etiketlerini yazdırabilirsiniz.

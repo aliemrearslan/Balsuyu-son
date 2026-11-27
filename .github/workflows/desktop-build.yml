@@ -1,0 +1,90 @@
+name: Masaustu Program Derleyici (Windows + Mac)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-build.yml'
+
+jobs:
+  build-windows:
+    name: Windows (.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bağımlılıkları Yükle
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r desktop/requirements.txt
+
+      - name: Uygulama İkonunu Hazırla
+        run: python desktop/make_icons.py
+
+      - name: Windows Tek Dosya EXE Derle
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed ^
+            --name "Balsuyu_MTAL_Yonetim_Windows" ^
+            --icon "desktop/app_icon.ico" ^
+            --add-data "desktop/app_icon.ico;." ^
+            --collect-all customtkinter ^
+            desktop/yonetim.py
+
+      - name: Windows Çıktısını Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Balsuyu-MTAL-Yonetim-Windows-EXE
+          path: |
+            dist/Balsuyu_MTAL_Yonetim_Windows.exe
+            desktop/ILK_ACILIS_REHBERI.txt
+
+  build-macos:
+    name: MacBook (.app + .dmg)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bağımlılıkları Yükle
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install -r desktop/requirements.txt
+
+      - name: Uygulama İkonunu Hazırla
+        run: python3 desktop/make_icons.py
+
+      - name: macOS Uygulaması (.app) Derle
+        run: |
+          pyinstaller --noconfirm --clean --windowed --onedir \
+            --name "Balsuyu MTAL Yonetim" \
+            --icon "desktop/app_icon.icns" \
+            --osx-bundle-identifier "tr.meb.balsuyumtal.yonetim" \
+            --collect-all customtkinter \
+            desktop/yonetim.py
+
+      - name: Kurulum DMG Paketini Oluştur
+        run: |
+          mkdir -p dmg_stage
+          cp -R "dist/Balsuyu MTAL Yonetim.app" dmg_stage/
+          cp desktop/ILK_ACILIS_REHBERI.txt dmg_stage/
+          ln -s /Applications dmg_stage/Applications
+          hdiutil create -volname "Balsuyu MTAL Yonetim" \
+            -srcfolder dmg_stage -ov -format UDZO \
+            "dist/Balsuyu_MTAL_Yonetim_MacBook.dmg"
+
+      - name: macOS Çıktısını Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Balsuyu-MTAL-Yonetim-MacBook-DMG
+          path: |
+            dist/Balsuyu_MTAL_Yonetim_MacBook.dmg
+            desktop/ILK_ACILIS_REHBERI.txt

@@ -1,0 +1,4 @@
+desktop/build/
+desktop/dist/
+desktop/dmg_stage/
+desktop/*.spec
