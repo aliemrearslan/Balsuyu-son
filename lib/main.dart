@@ -1,15 +1,323 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest_all.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
 import 'package:url_launcher/url_launcher.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await BildirimYoneticisi.baslat();
   runApp(const BalsuyuServisApp());
+}
+
+class BildirimYoneticisi {
+  static final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
+  static bool _hazir = false;
+
+  static Future<void> baslat() async {
+    if (kIsWeb) return;
+    try {
+      tz_data.initializeTimeZones();
+      tz.setLocalLocation(tz.getLocation('Europe/Istanbul'));
+      const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const initSettings = InitializationSettings(android: androidInit);
+      await _plugin.initialize(initSettings);
+      final androidImpl = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await androidImpl?.requestNotificationsPermission();
+      _hazir = true;
+    } catch (_) {}
+  }
+
+  static Future<void> anlikBildirimGoster(
+    int id,
+    String baslik,
+    String icerik, {
+    bool acil = false,
+  }) async {
+    if (kIsWeb || !_hazir) return;
+    try {
+      final androidDetay = AndroidNotificationDetails(
+        acil ? 'balsuyu_acil' : 'balsuyu_duyuru',
+        acil ? 'Balsuyu Acil Duyurular' : 'Balsuyu Duyuru ve Bildirimler',
+        channelDescription: 'Balsuyu MTAL servis duyuru ve hatırlatmaları',
+        importance: Importance.max,
+        priority: Priority.high,
+        playSound: true,
+        enableVibration: true,
+      );
+      await _plugin.show(
+        id,
+        baslik,
+        icerik,
+        NotificationDetails(android: androidDetay),
+      );
+    } catch (_) {}
+  }
+
+  static Future<void> duyuruKontrolEtVeBildir(
+    Map<String, dynamic>? duyuru,
+  ) async {
+    if (kIsWeb || !_hazir || duyuru == null) return;
+    final metin = (duyuru['metin'] ?? '').toString().trim();
+    if (metin.isEmpty) return;
+    final imza = '${duyuru['tarih'] ?? ''}|${duyuru['saat'] ?? ''}|$metin';
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString('balsuyu_son_duyuru_imza') == imza) return;
+    await prefs.setString('balsuyu_son_duyuru_imza', imza);
+    final acilMi = duyuru['onem'] == 'acil';
+    await anlikBildirimGoster(
+      9001,
+      acilMi ? '🚨 ACİL DUYURU — Balsuyu MTAL' : '📢 Balsuyu MTAL Duyuru',
+      metin,
+      acil: acilMi,
+    );
+  }
+
+  static Future<void> soforUyariKontrolEtVeBildir(
+    String plaka,
+    Map<String, String> srvDurum,
+  ) async {
+    if (kIsWeb || !_hazir) return;
+    final uyari = (srvDurum['soforUyarisi'] ?? '').trim();
+    if (uyari.isEmpty) return;
+    final saat = (srvDurum['soforUyariSaati'] ?? '').trim();
+    final imza = '$plaka|$saat|$uyari';
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString('balsuyu_son_sofor_uyari_imza') == imza) return;
+    await prefs.setString('balsuyu_son_sofor_uyari_imza', imza);
+    final arizaMi = (srvDurum['soforUyariTuru'] ?? '') == 'ARIZA';
+    await anlikBildirimGoster(
+      9002,
+      arizaMi ? '🔧 Servis Arıza ($plaka)' : '⚠️ Servis Gecikme ($plaka)',
+      uyari,
+      acil: arizaMi,
+    );
+  }
+
+  static tz.TZDateTime _siradakiHaftaGunu(int weekday, int saat, int dakika) {
+    final simdi = tz.TZDateTime.now(tz.local);
+    var hedef = tz.TZDateTime(
+      tz.local,
+      simdi.year,
+      simdi.month,
+      simdi.day,
+      saat,
+      dakika,
+    );
+    while (hedef.weekday != weekday || !hedef.isAfter(simdi)) {
+      hedef = hedef.add(const Duration(days: 1));
+    }
+    return hedef;
+  }
+
+  static Future<void> _haftalikPlanla(
+    int id,
+    int weekday,
+    String saatStr,
+    int varsayilanSaat,
+    int varsayilanDak,
+    String baslik,
+    String icerik,
+  ) async {
+    final topDak =
+        saatMetniDakikaya(saatStr, varsayilanSaat * 60 + varsayilanDak);
+    final h = topDak ~/ 60;
+    final m = topDak % 60;
+    final hedef = _siradakiHaftaGunu(weekday, h, m);
+    const detay = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'balsuyu_hatirlatma',
+        'Servis Saat Hatırlatmaları',
+        channelDescription: 'Sabah ve akşam servis biniş/iniş hatırlatmaları',
+        importance: Importance.max,
+        priority: Priority.high,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        baslik,
+        icerik,
+        hedef,
+        detay,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+      );
+    } catch (_) {
+      try {
+        await _plugin.zonedSchedule(
+          id,
+          baslik,
+          icerik,
+          hedef,
+          detay,
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        );
+      } catch (_) {}
+    }
+  }
+
+  static Future<void> ogrenciBildirimleriniPlanla(
+    Map<String, dynamic> saatAyarlari,
+  ) async {
+    if (kIsWeb || !_hazir) return;
+    final bSabah = (saatAyarlari['bildirimSabah'] ?? '07:00').toString();
+    final bPzt = (saatAyarlari['bildirimPztAksam'] ?? '17:00').toString();
+    final bSali = (saatAyarlari['bildirimSaliAksam'] ?? '16:00').toString();
+    final bDiger = (saatAyarlari['bildirimDigerAksam'] ?? '15:20').toString();
+    final bInis = (saatAyarlari['bildirimAksamInis'] ?? '18:00').toString();
+
+    final imza = '$bSabah|$bPzt|$bSali|$bDiger|$bInis';
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString('balsuyu_ogr_bildirim_imza') == imza) return;
+
+    await ogrenciBildirimIptal(temizleImza: false);
+
+    // 1. Sabah 07:00 — Pazartesi..Cuma
+    for (int gun = DateTime.monday; gun <= DateTime.friday; gun++) {
+      await _haftalikPlanla(
+        100 + gun,
+        gun,
+        bSabah,
+        7,
+        0,
+        '🚌 Sabah Servis Doğrulaması',
+        'Serviste olduğunuzu doğrulamanız gerekmektedir. Lütfen uygulamadan Bindim (NFC) butonuna basınız.',
+      );
+    }
+
+    // 2. Akşam Biniş — Pzt 17:00, Salı 16:00, Çar-Per-Cum 15:20
+    await _haftalikPlanla(
+      111,
+      DateTime.monday,
+      bPzt,
+      17,
+      0,
+      '🚌 Akşam Servis Doğrulaması',
+      'Akşam servisinde olduğunuzu doğrulamanız gerekmektedir. Lütfen Bindim (NFC) butonuna basınız.',
+    );
+    await _haftalikPlanla(
+      112,
+      DateTime.tuesday,
+      bSali,
+      16,
+      0,
+      '🚌 Akşam Servis Doğrulaması',
+      'Akşam servisinde olduğunuzu doğrulamanız gerekmektedir. Lütfen Bindim (NFC) butonuna basınız.',
+    );
+    for (int gun = DateTime.wednesday; gun <= DateTime.friday; gun++) {
+      await _haftalikPlanla(
+        110 + gun,
+        gun,
+        bDiger,
+        15,
+        20,
+        '🚌 Akşam Servis Doğrulaması',
+        'Akşam servisinde olduğunuzu doğrulamanız gerekmektedir. Lütfen Bindim (NFC) butonuna basınız.',
+      );
+    }
+
+    // 3. Akşam İniş — 18:00 Pazartesi..Cuma
+    for (int gun = DateTime.monday; gun <= DateTime.friday; gun++) {
+      await _haftalikPlanla(
+        120 + gun,
+        gun,
+        bInis,
+        18,
+        0,
+        '🏠 Servisten İndiniz mi?',
+        'Servisten indiniz mi? Köy durağınızda indiyseniz lütfen İndim (NFC) butonuna basarak onaylayınız.',
+      );
+    }
+
+    await prefs.setString('balsuyu_ogr_bildirim_imza', imza);
+  }
+
+  static Future<void> ogrenciBildirimIptal({bool temizleImza = true}) async {
+    if (kIsWeb || !_hazir) return;
+    for (int gun = 1; gun <= 5; gun++) {
+      try {
+        await _plugin.cancel(100 + gun);
+        await _plugin.cancel(110 + gun);
+        await _plugin.cancel(120 + gun);
+      } catch (_) {}
+    }
+    if (temizleImza) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('balsuyu_ogr_bildirim_imza');
+    }
+  }
+
+  static Future<void> nobetciBildiriminiPlanla(
+    String nobetGunu,
+    Map<String, dynamic> saatAyarlari,
+  ) async {
+    if (kIsWeb || !_hazir) return;
+    final bNobet = (saatAyarlari['bildirimNobetci'] ?? '07:00').toString();
+    final okulSaat = (saatAyarlari['sabahInisBas'] ?? '07:30').toString();
+    final gunKucuk = nobetGunu.toLowerCase();
+
+    final List<int> gunler = [];
+    if (gunKucuk.contains('pazartesi')) gunler.add(DateTime.monday);
+    if (gunKucuk.contains('salı') || gunKucuk.contains('sali')) {
+      gunler.add(DateTime.tuesday);
+    }
+    if (gunKucuk.contains('çarşamba') || gunKucuk.contains('carsamba')) {
+      gunler.add(DateTime.wednesday);
+    }
+    if (gunKucuk.contains('perşembe') || gunKucuk.contains('persembe')) {
+      gunler.add(DateTime.thursday);
+    }
+    if (gunKucuk.contains('cuma')) gunler.add(DateTime.friday);
+    if (gunler.isEmpty) return;
+
+    final imza = '${gunler.join(",")}|$bNobet|$okulSaat';
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString('balsuyu_nobet_bildirim_imza') == imza) return;
+
+    await nobetciBildirimIptal(temizleImza: false);
+    for (final g in gunler) {
+      await _haftalikPlanla(
+        200 + g,
+        g,
+        bNobet,
+        7,
+        0,
+        '🏫 Bugün Nöbet Gününüz!',
+        'Bugün nöbet gününüz, sabah $okulSaat\'da okulda olmanız gerekmektedir.',
+      );
+    }
+    await prefs.setString('balsuyu_nobet_bildirim_imza', imza);
+  }
+
+  static Future<void> nobetciBildirimIptal({bool temizleImza = true}) async {
+    if (kIsWeb || !_hazir) return;
+    for (int gun = 1; gun <= 5; gun++) {
+      try {
+        await _plugin.cancel(200 + gun);
+      } catch (_) {}
+    }
+    if (temizleImza) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('balsuyu_nobet_bildirim_imza');
+    }
+  }
 }
 
 const String googleTabloWebhookUrl = String.fromEnvironment(
@@ -773,14 +1081,26 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
     }
     final rawSaat = veri['saatAyarlari'];
     final rawDuyuru = veri['duyuru'];
+    final yeniSaatMap =
+        rawSaat is Map ? Map<String, dynamic>.from(rawSaat) : saatAyarlari;
+    final yeniDuyuruMap =
+        rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
     setState(() {
       girisYapanOgrenci = ogrList.isNotEmpty ? ogrList.first : null;
       ogrenciServisi = srvList.isNotEmpty ? srvList.first : null;
       servisDurumu = yeniSrvDurum;
-      if (rawSaat is Map) saatAyarlari = Map<String, dynamic>.from(rawSaat);
-      duyuru = rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
+      saatAyarlari = yeniSaatMap;
+      duyuru = yeniDuyuruMap;
       aktifNobetciAd = aktifNobetciAdiniCoz(veri);
     });
+    BildirimYoneticisi.duyuruKontrolEtVeBildir(yeniDuyuruMap);
+    if (girisYapanOgrenci != null) {
+      BildirimYoneticisi.soforUyariKontrolEtVeBildir(
+        girisYapanOgrenci!.plaka,
+        yeniSrvDurum,
+      );
+      BildirimYoneticisi.ogrenciBildirimleriniPlanla(yeniSaatMap);
+    }
   }
 
   Future<void> kayitliOturumuYukle() async {
@@ -875,6 +1195,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   Future<void> ogrenciCikisYap() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('balsuyu_ogr_token');
+    await BildirimYoneticisi.ogrenciBildirimIptal();
     if (!mounted) return;
     setState(() {
       token = null;
@@ -1986,13 +2307,22 @@ class _VeliPaneliState extends State<VeliPaneli> {
       });
     }
     final rawDuyuru = veri['duyuru'];
+    final yeniDuyuruMap =
+        rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
     setState(() {
       veliOgrencisi = ogrList.isNotEmpty ? ogrList.first : null;
       ogrenciServisi = srvList.isNotEmpty ? srvList.first : null;
       servisDurumu = yeniSrvDurum;
-      duyuru = rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
+      duyuru = yeniDuyuruMap;
       aktifNobetciAd = aktifNobetciAdiniCoz(veri);
     });
+    BildirimYoneticisi.duyuruKontrolEtVeBildir(yeniDuyuruMap);
+    if (veliOgrencisi != null) {
+      BildirimYoneticisi.soforUyariKontrolEtVeBildir(
+        veliOgrencisi!.plaka,
+        yeniSrvDurum,
+      );
+    }
   }
 
   Future<void> kayitliVeliyiYukle() async {
@@ -2550,11 +2880,14 @@ class _SoforPaneliState extends State<SoforPaneli> {
       });
     }
     final rawDuyuru = veri['duyuru'];
+    final yeniDuyuruMap =
+        rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
     setState(() {
       soforServisi = srvList.isNotEmpty ? srvList.first : null;
       servisDurumu = yeniSrvDurum;
-      duyuru = rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
+      duyuru = yeniDuyuruMap;
     });
+    BildirimYoneticisi.duyuruKontrolEtVeBildir(yeniDuyuruMap);
   }
 
   Future<void> _soforDurumGonder(String durumTuru, String mesaj) async {
@@ -3290,6 +3623,11 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
     }
 
     final rawDuyuru = veri['duyuru'];
+    final rawSaat = veri['saatAyarlari'];
+    final yeniDuyuruMap =
+        rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
+    final yeniSaatMap =
+        rawSaat is Map ? Map<String, dynamic>.from(rawSaat) : <String, dynamic>{};
     final rawGuvenlik = veri['guvenlikUyarilari'];
     final List<Map<String, dynamic>> yeniGuvenlik = [];
     if (rawGuvenlik is List) {
@@ -3306,9 +3644,17 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
       gorevBasladi = gBasladi;
       gorevSaati = gSaati;
       servisDurumlari = yeniDurumlar;
-      duyuru = rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
+      duyuru = yeniDuyuruMap;
       guvenlikUyarilari = yeniGuvenlik;
     });
+
+    BildirimYoneticisi.duyuruKontrolEtVeBildir(yeniDuyuruMap);
+    if (seciliOgretmen != null) {
+      BildirimYoneticisi.nobetciBildiriminiPlanla(
+        seciliOgretmen!.gun,
+        yeniSaatMap,
+      );
+    }
   }
 
   Future<void> _yetkisizKontrol(Map<String, dynamic> res) async {
@@ -3392,6 +3738,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
   Future<void> ogretmenCikisYap() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('balsuyu_ogretmen_token');
+    await BildirimYoneticisi.nobetciBildirimIptal();
     if (!mounted) return;
     setState(() {
       token = null;
