@@ -1523,254 +1523,370 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14.0, vertical: 6.0),
-              child: Column(
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.shade900.withAlpha(90),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.teal.withAlpha(77)),
-                    ),
-                    child: Row(
-                      children: [
-                        mebLogoRozeti(),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                  letterSpacing: 0.3,
+            Expanded(
+              child: SingleChildScrollView(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14.0, vertical: 6.0),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.shade900.withAlpha(90),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.teal.withAlpha(77)),
+                      ),
+                      child: Row(
+                        children: [
+                          mebLogoRozeti(),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'BALSUYU MESLEKİ VE TEKNİK ANADOLU LİSESİ',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    letterSpacing: 0.3,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                'Nöbetçi: $aktifNobetciAd',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.tealAccent,
+                                Text(
+                                  'Nöbetçi: $aktifNobetciAd',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.tealAccent,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.refresh,
-                              color: Colors.tealAccent, size: 18),
-                          tooltip: 'Yenile',
-                          onPressed: yukleniyor ? null : () => veriyiYenile(),
-                        ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red.shade700,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            minimumSize: const Size(48, 30),
-                          ),
-                          onPressed: acilDurumPenceresiAc,
-                          child: const Text(
-                            'SOS',
-                            style: TextStyle(
-                                fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.logout,
-                              color: Colors.white60, size: 18),
-                          tooltip: 'Çıkış Yap',
-                          onPressed: ogrenciCikisYap,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  duyuruBandiWidget(duyuru),
-                  soforUyariBandiWidget(servisDurumu),
-                  kuyrukBandiWidget(kuyrukSayisi, () => _kuyruguKontrolEt()),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.teal.withAlpha(55)),
-                    ),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: Colors.teal.shade700,
-                          child: const Icon(Icons.person,
-                              color: Colors.white, size: 22),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                girisYapanOgrenci!.adSoyad,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              Text(
-                                'No: ${girisYapanOgrenci!.id} | Sınıf: ${girisYapanOgrenci!.sinif} | Durak: ${girisYapanOgrenci!.koyDurak}',
-                                style: const TextStyle(
-                                    fontSize: 11, color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.black38,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            girisYapanOgrenci!.plaka,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                              ],
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF162032),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white10),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.phone_in_talk_rounded,
-                            color: Colors.tealAccent, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Şoför: $soforAdi',
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.white70),
+                          IconButton(
+                            icon: const Icon(Icons.refresh,
+                                color: Colors.tealAccent, size: 18),
+                            tooltip: 'Yenile',
+                            onPressed: yukleniyor ? null : () => veriyiYenile(),
                           ),
-                        ),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green.shade700,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              minimumSize: const Size(48, 30),
+                            ),
+                            onPressed: acilDurumPenceresiAc,
+                            child: const Text(
+                              'SOS',
+                              style: TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
                           ),
-                          icon: const Icon(Icons.call, size: 12),
-                          label: const Text(
-                            'Şoförü Ara',
+                          IconButton(
+                            icon: const Icon(Icons.logout,
+                                color: Colors.white60, size: 18),
+                            tooltip: 'Çıkış Yap',
+                            onPressed: ogrenciCikisYap,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    duyuruBandiWidget(duyuru),
+                    soforUyariBandiWidget(servisDurumu),
+                    kuyrukBandiWidget(kuyrukSayisi, () => _kuyruguKontrolEt()),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.teal.withAlpha(55)),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: Colors.teal.shade700,
+                            child: const Icon(Icons.person,
+                                color: Colors.white, size: 22),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  girisYapanOgrenci!.adSoyad,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                Text(
+                                  'No: ${girisYapanOgrenci!.id} | Sınıf: ${girisYapanOgrenci!.sinif} | Durak: ${girisYapanOgrenci!.koyDurak}',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // BELİRGİN SERVİS PLAKA KARTI & GÜVENLİK UYARISI
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.amberAccent.withAlpha(180),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'KAYITLI SERVİS PLAKANIZ',
                             style: TextStyle(
-                                fontSize: 10, fontWeight: FontWeight.bold),
+                              color: Colors.amberAccent,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.0,
+                            ),
                           ),
-                          onPressed: () => telefonlaAra(context, soforTel),
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border:
+                                  Border.all(color: Colors.black87, width: 2),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 8),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF003399),
+                                    borderRadius: BorderRadius.horizontal(
+                                      left: Radius.circular(6),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'TR',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 18, vertical: 6),
+                                  child: Text(
+                                    girisYapanOgrenci!.plaka,
+                                    style: const TextStyle(
+                                      color: Colors.black,
+                                      fontSize: 21,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.8,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade900.withAlpha(110),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.redAccent.withAlpha(160)),
+                            ),
+                            child: const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.warning_amber_rounded,
+                                        color: Colors.amberAccent, size: 15),
+                                    SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Kesinlikle başka plakalı bir servise binmeyiniz! Farklı servise binmeniz halinde okul yoklamasında hata oluşacaktır.',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: 4),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(Icons.location_off_rounded,
+                                        color: Colors.redAccent, size: 15),
+                                    SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Sabah okul haricinde başka bir yerde kesinlikle inmeyiniz! (Akşam yalnızca kendi köy durağınızda ininiz.)',
+                                        style: TextStyle(
+                                          color: Color(0xFFFDE68A),
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF162032),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.phone_in_talk_rounded,
+                              color: Colors.tealAccent, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Şoför: $soforAdi',
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.white70),
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                            ),
+                            icon: const Icon(Icons.call, size: 12),
+                            label: const Text(
+                              'Şoförü Ara',
+                              style: TextStyle(
+                                  fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                            onPressed: () => telefonlaAra(context, soforTel),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (sonIslemDurumu == 'bekliyor') ...[
+                      Container(
+                        width: 118,
+                        height: 118,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: (kapaliMi ? Colors.orange : Colors.teal)
+                              .withAlpha(24),
+                          border: Border.all(
+                            color: (kapaliMi ? Colors.orange : Colors.teal)
+                                .withAlpha(110),
+                            width: 3,
+                          ),
+                        ),
+                        child: Center(
+                          child: islemYapiliyor
+                              ? const CircularProgressIndicator(
+                                  color: Colors.tealAccent)
+                              : Icon(
+                                  adim >= 4
+                                      ? Icons.verified_rounded
+                                      : (kapaliMi
+                                          ? Icons.lock_clock_rounded
+                                          : Icons.nfc_rounded),
+                                  size: 58,
+                                  color: kapaliMi
+                                      ? Colors.orangeAccent
+                                      : Colors.tealAccent,
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        (zaman['baslik'] ?? 'NFC Okuyucu').toString(),
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: kapaliMi ? Colors.orangeAccent : Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                        child: Text(
+                          (zaman['aciklama'] ?? '').toString(),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: kapaliMi
+                                ? Colors.amber.shade200
+                                : Colors.tealAccent,
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      Icon(
+                        Icons.check_circle,
+                        size: 68,
+                        color: sonIslemDurumu == 'bindi'
+                            ? Colors.greenAccent
+                            : Colors.blueAccent,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        sonIslemDurumu == 'bindi'
+                            ? 'Biniş Kaydedildi!'
+                            : 'İniş Kaydedildi!',
+                        style: const TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'Saat: $islemSaati',
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.white70),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                  ],
+                ),
               ),
             ),
-            const Spacer(),
-            if (sonIslemDurumu == 'bekliyor') ...[
-              Container(
-                width: 136,
-                height: 136,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: (kapaliMi ? Colors.orange : Colors.teal).withAlpha(24),
-                  border: Border.all(
-                    color:
-                        (kapaliMi ? Colors.orange : Colors.teal).withAlpha(110),
-                    width: 3,
-                  ),
-                ),
-                child: Center(
-                  child: islemYapiliyor
-                      ? const CircularProgressIndicator(
-                          color: Colors.tealAccent)
-                      : Icon(
-                          adim >= 4
-                              ? Icons.verified_rounded
-                              : (kapaliMi
-                                  ? Icons.lock_clock_rounded
-                                  : Icons.nfc_rounded),
-                          size: 68,
-                          color: kapaliMi
-                              ? Colors.orangeAccent
-                              : Colors.tealAccent,
-                        ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                (zaman['baslik'] ?? 'NFC Okuyucu').toString(),
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: kapaliMi ? Colors.orangeAccent : Colors.white,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: Text(
-                  (zaman['aciklama'] ?? '').toString(),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: kapaliMi ? Colors.amber.shade200 : Colors.tealAccent,
-                  ),
-                ),
-              ),
-            ] else ...[
-              Icon(
-                Icons.check_circle,
-                size: 75,
-                color: sonIslemDurumu == 'bindi'
-                    ? Colors.greenAccent
-                    : Colors.blueAccent,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                sonIslemDurumu == 'bindi'
-                    ? 'Biniş Kaydedildi!'
-                    : 'İniş Kaydedildi!',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              Text(
-                'Saat: $islemSaati',
-                style: const TextStyle(fontSize: 12, color: Colors.white70),
-              ),
-            ],
-            const Spacer(),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14.0),
               child: Row(
