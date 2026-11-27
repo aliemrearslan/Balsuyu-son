@@ -55,6 +55,7 @@ Future<Map<String, dynamic>> apiPost(Map<String, dynamic> paket) async {
   } catch (_) {
     return {
       'basarili': false,
+      'agHatasi': true,
       'hata': 'Baglanti hatasi. Internetinizi kontrol ediniz.',
     };
   }
@@ -80,9 +81,201 @@ Future<Map<String, dynamic>> apiGet(Map<String, String> params) async {
   } catch (_) {
     return {
       'basarili': false,
+      'agHatasi': true,
       'hata': 'Baglanti hatasi. Internetinizi kontrol ediniz.',
     };
   }
+}
+
+class OfflineKuyruk {
+  static const String _key = 'balsuyu_offline_kuyruk';
+
+  static Future<List<Map<String, dynamic>>> _oku() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key);
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static Future<void> _yaz(List<Map<String, dynamic>> liste) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, jsonEncode(liste));
+  }
+
+  static Future<int> sayi() async => (await _oku()).length;
+
+  static Future<int> ekle(Map<String, dynamic> paket, String etiket) async {
+    final trNow = DateTime.now().toUtc().add(const Duration(hours: 3));
+    final saatStr =
+        '${trNow.hour.toString().padLeft(2, '0')}:${trNow.minute.toString().padLeft(2, '0')}';
+    final kopya = Map<String, dynamic>.from(paket);
+    kopya['cevirimdisiSaat'] = kopya['cevirimdisiSaat'] ?? saatStr;
+    final liste = await _oku();
+    liste.add({'paket': kopya, 'etiket': etiket, 'saat': saatStr});
+    await _yaz(liste);
+    return liste.length;
+  }
+
+  static Future<Map<String, int>> gonder() async {
+    final liste = await _oku();
+    if (liste.isEmpty) return {'gonderilen': 0, 'kalan': 0};
+    int gonderilen = 0;
+    final List<Map<String, dynamic>> kalanlar = [];
+    bool agKesildi = false;
+    for (final item in liste) {
+      if (agKesildi) {
+        kalanlar.add(item);
+        continue;
+      }
+      final paket = item['paket'];
+      if (paket is! Map) continue;
+      final res = await apiPost(Map<String, dynamic>.from(paket));
+      if (res['agHatasi'] == true) {
+        agKesildi = true;
+        kalanlar.add(item);
+      } else {
+        if (res['basarili'] == true) gonderilen++;
+      }
+    }
+    await _yaz(kalanlar);
+    return {'gonderilen': gonderilen, 'kalan': kalanlar.length};
+  }
+}
+
+int saatMetniDakikaya(dynamic saatStr, int varsayilan) {
+  final s = (saatStr ?? '').toString().trim();
+  final parcalar = s.split(':');
+  if (parcalar.length == 2) {
+    final h = int.tryParse(parcalar[0]);
+    final d = int.tryParse(parcalar[1]);
+    if (h != null && d != null && h >= 0 && h <= 23 && d >= 0 && d <= 59) {
+      return h * 60 + d;
+    }
+  }
+  return varsayilan;
+}
+
+Widget duyuruBandiWidget(Map<String, dynamic>? duyuru) {
+  if (duyuru == null || (duyuru['metin'] ?? '').toString().trim().isEmpty) {
+    return const SizedBox.shrink();
+  }
+  final acilMi = duyuru['onem'] == 'acil';
+  final saat = (duyuru['saat'] ?? '').toString();
+  return Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 6),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: acilMi ? Colors.red.shade900.withAlpha(220) : Colors.blue.shade900.withAlpha(210),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: acilMi ? Colors.redAccent : Colors.lightBlueAccent),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          acilMi ? Icons.campaign_rounded : Icons.notifications_active_rounded,
+          color: acilMi ? Colors.amberAccent : Colors.lightBlueAccent,
+          size: 18,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'DUYURU${saat.isNotEmpty ? ' ($saat)' : ''}: ${duyuru['metin']}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget soforUyariBandiWidget(Map<String, String> srvDurum) {
+  final uyari = (srvDurum['soforUyarisi'] ?? '').trim();
+  if (uyari.isEmpty) return const SizedBox.shrink();
+  final arizaMi = (srvDurum['soforUyariTuru'] ?? '') == 'ARIZA';
+  final saat = (srvDurum['soforUyariSaati'] ?? '').trim();
+  return Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 6),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: arizaMi ? Colors.red.shade900.withAlpha(210) : Colors.amber.shade900.withAlpha(210),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: arizaMi ? Colors.redAccent : Colors.amberAccent),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          arizaMi ? Icons.build_circle_rounded : Icons.schedule_rounded,
+          color: Colors.white,
+          size: 18,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            '${arizaMi ? 'SERVİS ARIZA' : 'SERVİS GECİKME'}${saat.isNotEmpty ? ' ($saat)' : ''}: $uyari',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget kuyrukBandiWidget(int sayi, VoidCallback onGonder) {
+  if (sayi <= 0) return const SizedBox.shrink();
+  return Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 6),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: Colors.orange.shade900.withAlpha(220),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: Colors.amberAccent),
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.cloud_off_rounded, color: Colors.amberAccent, size: 17),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Çevrimdışı Kuyruk: $sayi kayıt bağlantı gelince otomatik gönderilecek.',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        TextButton(
+          onPressed: onGonder,
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.amberAccent,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            minimumSize: const Size(50, 24),
+          ),
+          child: const Text('Dene', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+        ),
+      ],
+    ),
+  );
 }
 
 String getBugununGunu() {
@@ -281,6 +474,7 @@ class Ogrenci {
   String durum;
   int adim;
   String saat;
+  String izinli;
 
   Ogrenci({
     required this.id,
@@ -293,6 +487,7 @@ class Ogrenci {
     this.durum = 'binmedi',
     this.adim = 0,
     this.saat = '',
+    this.izinli = '',
   });
 
   factory Ogrenci.fromJson(Map<String, dynamic> item) {
@@ -310,6 +505,7 @@ class Ogrenci {
           : 'binmedi',
       adim: item['adim'] != null ? int.tryParse(item['adim'].toString()) ?? 0 : 0,
       saat: item['saat'] != null ? item['saat'].toString().trim() : '',
+      izinli: item['izinli'] != null ? item['izinli'].toString().trim() : '',
     );
   }
 }
@@ -397,6 +593,11 @@ String aktifNobetciAdiniCoz(Map<String, dynamic> veri) {
 }
 
 String adimKisaEtiket(Ogrenci ogr) {
+  if (ogr.izinli == 'TUM_GUN') return '📋 İZİNLİ (Tüm Gün)';
+  if (ogr.izinli == 'SABAH' && ogr.adim < 2) return '📋 İZİNLİ (Sabah)';
+  if (ogr.izinli == 'AKSAM' && ogr.adim >= 2 && ogr.adim < 4) {
+    return '📋 İZİNLİ (Akşam)';
+  }
   final s = ogr.saat.isNotEmpty ? ' (${ogr.saat})' : '';
   if (ogr.adim == 1) return '1. Sabah Bindi$s';
   if (ogr.adim == 2) return '2. Okulda İndi$s';
@@ -492,6 +693,9 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   Ogrenci? girisYapanOgrenci;
   ServisHatti? ogrenciServisi;
   Map<String, String> servisDurumu = {};
+  Map<String, dynamic> saatAyarlari = {};
+  Map<String, dynamic>? duyuru;
+  int kuyrukSayisi = 0;
   String aktifNobetciAd = 'Öğretmen';
   bool yukleniyor = false;
   bool islemYapiliyor = false;
@@ -506,6 +710,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
   void initState() {
     super.initState();
     kayitliOturumuYukle();
+    _kuyruguKontrolEt(sessiz: true);
     otoYenileyici = Timer.periodic(const Duration(seconds: 6), (_) {
       if (!mounted) return;
       if (girisYapanOgrenci != null) {
@@ -515,9 +720,37 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
           girisYapanOgrenci != null &&
           !yukleniyor &&
           !islemYapiliyor) {
+        _kuyruguKontrolEt(sessiz: true);
         veriyiYenile(sessiz: true);
       }
     });
+  }
+
+  Future<void> _kuyruguKontrolEt({bool sessiz = false}) async {
+    final s = await OfflineKuyruk.sayi();
+    if (mounted && s != kuyrukSayisi) setState(() => kuyrukSayisi = s);
+    if (s <= 0) return;
+    final sonuc = await OfflineKuyruk.gonder();
+    if (!mounted) return;
+    setState(() => kuyrukSayisi = sonuc['kalan'] ?? 0);
+    if ((sonuc['gonderilen'] ?? 0) > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.teal.shade800,
+          content: Text(
+            '✅ Bekleyen ${sonuc['gonderilen']} çevrimdışı kayıt buluta gönderildi!',
+          ),
+        ),
+      );
+      veriyiYenile(sessiz: true);
+    } else if (!sessiz && (sonuc['kalan'] ?? 0) > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.orange,
+          content: Text('İnternet henüz yok, kayıtlar cihazda güvende bekliyor.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -538,10 +771,14 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
         yeniSrvDurum[k.toString()] = (v ?? '').toString();
       });
     }
+    final rawSaat = veri['saatAyarlari'];
+    final rawDuyuru = veri['duyuru'];
     setState(() {
       girisYapanOgrenci = ogrList.isNotEmpty ? ogrList.first : null;
       ogrenciServisi = srvList.isNotEmpty ? srvList.first : null;
       servisDurumu = yeniSrvDurum;
+      if (rawSaat is Map) saatAyarlari = Map<String, dynamic>.from(rawSaat);
+      duyuru = rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
       aktifNobetciAd = aktifNobetciAdiniCoz(veri);
     });
   }
@@ -810,8 +1047,38 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
     final trSimdi = DateTime.now().toUtc().add(const Duration(hours: 3));
     final gun = trSimdi.weekday;
     final topDak = trSimdi.hour * 60 + trSimdi.minute;
-    final aksamBas = gun == DateTime.monday ? 17 * 60 : 15 * 60;
-    final aksamBasStr = gun == DateTime.monday ? '17:00' : '15:00';
+
+    final sbBasStr = (saatAyarlari['sabahBinisBas'] ?? '06:30').toString();
+    final sbBitStr = (saatAyarlari['sabahBinisBit'] ?? '07:30').toString();
+    final siBasStr = (saatAyarlari['sabahInisBas'] ?? '07:30').toString();
+    final siBitStr = (saatAyarlari['sabahInisBit'] ?? '08:00').toString();
+    final pztAkStr = (saatAyarlari['pztAksamBas'] ?? '17:00').toString();
+    final digAkStr = (saatAyarlari['digerAksamBas'] ?? '15:00').toString();
+    final akBitStr = (saatAyarlari['aksamBit'] ?? '18:00').toString();
+    final haftaSonuKapali = saatAyarlari['haftaSonuKapali'] != false;
+
+    final sbBas = saatMetniDakikaya(sbBasStr, 390);
+    final sbBit = saatMetniDakikaya(sbBitStr, 450);
+    final siBas = saatMetniDakikaya(siBasStr, 450);
+    final siBit = saatMetniDakikaya(siBitStr, 480);
+    final aksamBasStr = gun == DateTime.monday ? pztAkStr : digAkStr;
+    final aksamBas = saatMetniDakikaya(
+      aksamBasStr,
+      gun == DateTime.monday ? 17 * 60 : 15 * 60,
+    );
+    final akBit = saatMetniDakikaya(akBitStr, 1080);
+
+    final izinli = girisYapanOgrenci?.izinli ?? '';
+    if (izinli == 'TUM_GUN') {
+      return {
+        'binisAcik': false,
+        'inisAcik': false,
+        'kapaliMi': true,
+        'baslik': 'Bugün İzinlisiniz',
+        'aciklama':
+            'Okul idaresi tarafından bugün için izinli (servise binmeyecek) olarak işaretlendiniz.',
+      };
+    }
 
     if (adim >= 4) {
       return {
@@ -823,35 +1090,47 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       };
     }
 
-    if (gun == DateTime.saturday || gun == DateTime.sunday) {
+    if (haftaSonuKapali &&
+        (gun == DateTime.saturday || gun == DateTime.sunday)) {
       return {
         'binisAcik': false,
         'inisAcik': false,
         'kapaliMi': true,
         'baslik': 'Hafta Sonu Kapalı',
         'aciklama':
-            'Cumartesi ve Pazar günleri sistem kapalıdır. Pazartesi 06:30\'da açılacaktır.',
+            'Cumartesi ve Pazar günleri sistem kapalıdır. Pazartesi $sbBasStr\'da açılacaktır.',
       };
     }
 
-    if (topDak < 390) {
+    if (topDak < sbBas) {
       return {
         'binisAcik': false,
         'inisAcik': false,
         'kapaliMi': true,
         'baslik': 'Sistem Kapalı',
-        'aciklama': 'Sabah Biniş 06:30 - 07:30 saatleri arasında açılacaktır.',
+        'aciklama':
+            'Sabah Biniş $sbBasStr - $sbBitStr saatleri arasında açılacaktır.',
       };
     }
 
-    if (topDak >= 390 && topDak < 450) {
+    if (topDak >= sbBas && topDak < sbBit) {
+      if (izinli == 'SABAH') {
+        return {
+          'binisAcik': false,
+          'inisAcik': false,
+          'kapaliMi': true,
+          'baslik': 'Sabah İzinlisiniz',
+          'aciklama':
+              'Sabah servisi için idare tarafından izinli işaretlendiniz. Akşam $aksamBasStr\'da açılacaktır.',
+        };
+      }
       if (adim == 0) {
         return {
           'binisAcik': true,
           'inisAcik': false,
           'kapaliMi': false,
           'baslik': 'Sabah Biniş Aktif',
-          'aciklama': '1. Sabah Köyden Biniş (06:30 - 07:30)',
+          'aciklama': '1. Sabah Köyden Biniş ($sbBasStr - $sbBitStr)',
           'binisMesaj': 'SABAH BİNDİ',
           'binisYeniAdim': 1,
         };
@@ -863,7 +1142,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
           'kapaliMi': true,
           'baslik': 'Sabah İniş Bekleniyor',
           'aciklama':
-              'Sabah İndim butonu 07:30\'da açılacaktır (07:30 - 08:00).',
+              'Sabah İndim butonu $siBasStr\'da açılacaktır ($siBasStr - $siBitStr).',
         };
       }
       return {
@@ -875,7 +1154,17 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       };
     }
 
-    if (topDak >= 450 && topDak < 480) {
+    if (topDak >= siBas && topDak < siBit) {
+      if (izinli == 'SABAH') {
+        return {
+          'binisAcik': false,
+          'inisAcik': false,
+          'kapaliMi': true,
+          'baslik': 'Sabah İzinlisiniz',
+          'aciklama':
+              'Sabah servisi için izinlisiniz. Akşam Biniş bugün $aksamBasStr\'da açılacaktır.',
+        };
+      }
       final sabahTamamSaat = (servisDurumu['sabahTamam'] ?? '').trim();
       final bool sabahIndirmeBitti = sabahTamamSaat.isNotEmpty;
       if (adim <= 1 && !sabahIndirmeBitti) {
@@ -884,7 +1173,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
           'inisAcik': true,
           'kapaliMi': false,
           'baslik': 'Sabah İniş Aktif',
-          'aciklama': '2. Sabah Okula İniş (07:30 - 08:00)',
+          'aciklama': '2. Sabah Okula İniş ($siBasStr - $siBitStr)',
           'inisMesaj': 'SABAH İNDİ',
           'inisYeniAdim': 2,
         };
@@ -902,25 +1191,35 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       };
     }
 
-    if (topDak >= 480 && topDak < aksamBas) {
+    if (topDak >= siBit && topDak < aksamBas) {
       return {
         'binisAcik': false,
         'inisAcik': false,
         'kapaliMi': true,
         'baslik': 'Sistem Kapalı',
         'aciklama':
-            'Sistem 08:00\'da kapandı. Akşam Biniş bugün $aksamBasStr\'da açılacaktır.',
+            'Sistem $siBitStr\'da kapandı. Akşam Biniş bugün $aksamBasStr\'da açılacaktır.',
       };
     }
 
-    if (topDak >= aksamBas && topDak < 1080) {
+    if (topDak >= aksamBas && topDak < akBit) {
+      if (izinli == 'AKSAM') {
+        return {
+          'binisAcik': false,
+          'inisAcik': false,
+          'kapaliMi': true,
+          'baslik': 'Akşam İzinlisiniz',
+          'aciklama':
+              'Akşam servisi için okul idaresi tarafından izinli işaretlendiniz.',
+        };
+      }
       if (adim <= 2) {
         return {
           'binisAcik': true,
           'inisAcik': false,
           'kapaliMi': false,
           'baslik': 'Akşam Biniş Aktif',
-          'aciklama': '3. Akşam Okuldan Biniş ($aksamBasStr - 18:00)',
+          'aciklama': '3. Akşam Okuldan Biniş ($aksamBasStr - $akBitStr)',
           'binisMesaj': 'AKŞAM BİNDİ',
           'binisYeniAdim': 3,
         };
@@ -930,7 +1229,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
         'inisAcik': true,
         'kapaliMi': false,
         'baslik': 'Akşam İniş Aktif',
-        'aciklama': '4. Akşam Köyde İniş (18:00\'a kadar)',
+        'aciklama': '4. Akşam Köyde İniş ($akBitStr\'a kadar)',
         'inisMesaj': 'AKŞAM İNDİ',
         'inisYeniAdim': 4,
       };
@@ -942,7 +1241,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       'kapaliMi': true,
       'baslik': 'Sistem Kapandı',
       'aciklama':
-          'Sistem 18:00 itibarıyla tamamen kapandı. Bir sonraki okul günü 06:30\'da açılacaktır.',
+          'Sistem $akBitStr itibarıyla tamamen kapandı. Bir sonraki okul günü $sbBasStr\'da açılacaktır.',
     };
   }
 
@@ -994,8 +1293,7 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       }
     }
 
-    setState(() => islemYapiliyor = true);
-    final res = await apiPost({
+    final paket = {
       'token': token,
       'okulNo': girisYapanOgrenci!.id,
       'plaka': girisYapanOgrenci!.plaka,
@@ -1005,12 +1303,15 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
       'islem': tabloyaGidecekMesaj,
       'yontem': 'NFC (Öğrenci)',
       'ogretmen': aktifNobetciAd,
-    });
+    };
+
+    setState(() => islemYapiliyor = true);
+    final res = await apiPost(paket);
     if (!mounted) return;
     setState(() => islemYapiliyor = false);
 
     if (res['basarili'] == true) {
-      final now = DateTime.now();
+      final now = DateTime.now().toUtc().add(const Duration(hours: 3));
       final saatFormat =
           (res['saat'] != null && res['saat'].toString().isNotEmpty)
               ? res['saat'].toString()
@@ -1026,6 +1327,31 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
         SnackBar(
           backgroundColor: Colors.teal.shade800,
           content: Text('$tabloyaGidecekMesaj kaydedildi!'),
+        ),
+      );
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) setState(() => sonIslemDurumu = 'bekliyor');
+      });
+    } else if (res['agHatasi'] == true) {
+      final yeniSayi = await OfflineKuyruk.ekle(paket, tabloyaGidecekMesaj);
+      final trNow = DateTime.now().toUtc().add(const Duration(hours: 3));
+      final saatFormat =
+          '${trNow.hour.toString().padLeft(2, '0')}:${trNow.minute.toString().padLeft(2, '0')}';
+      if (!mounted) return;
+      setState(() {
+        kuyrukSayisi = yeniSayi;
+        girisYapanOgrenci!.adim = hedefAdim;
+        girisYapanOgrenci!.durum = yeniDurum;
+        girisYapanOgrenci!.saat = saatFormat;
+        sonIslemDurumu = islemTuru;
+        islemSaati = saatFormat;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.orange.shade900,
+          content: Text(
+            '📡 İnternet yok! $tabloyaGidecekMesaj ($saatFormat) cihazda saklandı, bağlantı gelince otomatik gönderilecek.',
+          ),
         ),
       );
       Future.delayed(const Duration(seconds: 3), () {
@@ -1267,7 +1593,10 @@ class _OgrenciNfcEkraniState extends State<OgrenciNfcEkrani> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
+                  duyuruBandiWidget(duyuru),
+                  soforUyariBandiWidget(servisDurumu),
+                  kuyrukBandiWidget(kuyrukSayisi, () => _kuyruguKontrolEt()),
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
@@ -1502,6 +1831,8 @@ class _VeliPaneliState extends State<VeliPaneli> {
   String? token;
   Ogrenci? veliOgrencisi;
   ServisHatti? ogrenciServisi;
+  Map<String, String> servisDurumu = {};
+  Map<String, dynamic>? duyuru;
   String aktifNobetciAd = 'Öğretmen';
   bool yukleniyor = false;
   Timer? otoYenileyici;
@@ -1531,9 +1862,19 @@ class _VeliPaneliState extends State<VeliPaneli> {
   void veriyiUygula(Map<String, dynamic> veri) {
     final ogrList = ogrencileriCoz(veri['ogrenciler']);
     final srvList = servisleriCoz(veri['servisler'], ogrList);
+    final rawSrvDurum = veri['servisDurumu'];
+    final Map<String, String> yeniSrvDurum = {};
+    if (rawSrvDurum is Map) {
+      rawSrvDurum.forEach((k, v) {
+        yeniSrvDurum[k.toString()] = (v ?? '').toString();
+      });
+    }
+    final rawDuyuru = veri['duyuru'];
     setState(() {
       veliOgrencisi = ogrList.isNotEmpty ? ogrList.first : null;
       ogrenciServisi = srvList.isNotEmpty ? srvList.first : null;
+      servisDurumu = yeniSrvDurum;
+      duyuru = rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
       aktifNobetciAd = aktifNobetciAdiniCoz(veri);
     });
   }
@@ -1820,6 +2161,27 @@ class _VeliPaneliState extends State<VeliPaneli> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              duyuruBandiWidget(duyuru),
+              soforUyariBandiWidget(servisDurumu),
+              if (veliOgrencisi!.izinli.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple.shade900.withAlpha(180),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.purpleAccent),
+                  ),
+                  child: Text(
+                    '📋 İdare Bilgisi: Öğrenciniz bugün (${veliOgrencisi!.izinli == 'SABAH' ? 'Sabah' : (veliOgrencisi!.izinli == 'AKSAM' ? 'Akşam' : 'Tüm Gün')}) okul yönetimi tarafından İZİNLİ işaretlenmiştir.',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -2036,6 +2398,8 @@ class SoforPaneli extends StatefulWidget {
 class _SoforPaneliState extends State<SoforPaneli> {
   String? token;
   ServisHatti? soforServisi;
+  Map<String, String> servisDurumu = {};
+  Map<String, dynamic>? duyuru;
   bool yukleniyor = false;
   Timer? otoYenileyici;
 
@@ -2062,9 +2426,178 @@ class _SoforPaneliState extends State<SoforPaneli> {
   void veriyiUygula(Map<String, dynamic> veri) {
     final ogrList = ogrencileriCoz(veri['ogrenciler']);
     final srvList = servisleriCoz(veri['servisler'], ogrList);
+    final rawSrvDurum = veri['servisDurumu'];
+    final Map<String, String> yeniSrvDurum = {};
+    if (rawSrvDurum is Map) {
+      rawSrvDurum.forEach((k, v) {
+        yeniSrvDurum[k.toString()] = (v ?? '').toString();
+      });
+    }
+    final rawDuyuru = veri['duyuru'];
     setState(() {
       soforServisi = srvList.isNotEmpty ? srvList.first : null;
+      servisDurumu = yeniSrvDurum;
+      duyuru = rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
     });
+  }
+
+  Future<void> _soforDurumGonder(String durumTuru, String mesaj) async {
+    if (token == null || soforServisi == null) return;
+    final res = await apiPost({
+      'token': token,
+      'islem': 'SOFOR_DURUM_BILDIR',
+      'durumTuru': durumTuru,
+      'mesaj': mesaj,
+      'plaka': soforServisi!.plaka,
+      'koy': soforServisi!.guzergah,
+      'adSoyad': 'Şoför: ${soforServisi!.soforAdi}',
+      'yontem': 'Şoför Bildirimi',
+      'ogretmen': soforServisi!.soforAdi,
+    });
+    if (!mounted) return;
+    if (res['basarili'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor:
+              durumTuru == 'ARIZA' ? Colors.red.shade900 : Colors.teal.shade800,
+          content: Text(
+            durumTuru == 'NORMAL'
+                ? '✅ Normal sefere dönüldüğü bildirildi.'
+                : '✅ Bildiriminiz idareye, öğretmenlere ve velilere iletildi!',
+          ),
+        ),
+      );
+      veriyiYenile(sessiz: true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade900,
+          content: Text((res['hata'] ?? 'Bildirim gönderilemedi.').toString()),
+        ),
+      );
+    }
+  }
+
+  void soforDurumPenceresiAc() {
+    final notController = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.amberAccent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '⚠️ GECİKME / ARIZA BİLDİRİMİ',
+              style: TextStyle(
+                color: Colors.amberAccent,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Bildiriminiz anında okul müdürüne, nöbetçi öğretmene ve velilere görünür.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notController,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+              decoration: InputDecoration(
+                hintText: 'İsteğe bağlı kısa açıklama (örn: 15 dk gecikme)...',
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 11),
+                filled: true,
+                fillColor: const Color(0xFF0F172A),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber.shade800,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 44),
+              ),
+              icon: const Icon(Icons.schedule_rounded, size: 18),
+              label: const Text(
+                'Trafik / Yol Nedeniyle Gecikme (10-15 dk)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+              ),
+              onPressed: () {
+                final not = notController.text.trim();
+                Navigator.pop(ctx);
+                _soforDurumGonder(
+                  'GECIKME',
+                  not.isNotEmpty ? not : 'Trafik / yol nedeniyle 10-15 dk gecikme',
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade800,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 44),
+              ),
+              icon: const Icon(Icons.build_circle_rounded, size: 18),
+              label: const Text(
+                'Araç Arızası Bildir (İdareye Acil E-Posta)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+              ),
+              onPressed: () {
+                final not = notController.text.trim();
+                Navigator.pop(ctx);
+                _soforDurumGonder(
+                  'ARIZA',
+                  not.isNotEmpty ? not : 'Araç arızası oluştu, yedek araç/destek gerekebilir',
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.greenAccent,
+                side: const BorderSide(color: Colors.greenAccent),
+                minimumSize: const Size(double.infinity, 40),
+              ),
+              icon: const Icon(Icons.check_circle_outline, size: 18),
+              label: const Text(
+                'Sorun Giderildi — Normal Sefere Dönüldü',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _soforDurumGonder('NORMAL', 'Normal seferde');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> kayitliSoforuYukle() async {
@@ -2362,6 +2895,12 @@ class _SoforPaneliState extends State<SoforPaneli> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.warning_amber_rounded,
+                color: Colors.orangeAccent, size: 24),
+            tooltip: 'Gecikme / Arıza Bildir',
+            onPressed: soforDurumPenceresiAc,
+          ),
+          IconButton(
             icon:
                 const Icon(Icons.refresh, color: Colors.tealAccent, size: 22),
             tooltip: 'Yenile',
@@ -2381,47 +2920,76 @@ class _SoforPaneliState extends State<SoforPaneli> {
         ],
       ),
       body: SafeArea(
-        child: ListView.builder(
-          padding: const EdgeInsets.all(12),
-          itemCount: ogrenciler.length,
-          itemBuilder: (context, index) {
-            final ogr = ogrenciler[index];
-            final Color noktaRenk = ogr.durum == 'serviste'
-                ? Colors.greenAccent
-                : (ogr.durum == 'indi' ? Colors.lightBlueAccent : Colors.grey);
-            return Card(
-              color: const Color(0xFF1E293B),
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: Icon(Icons.circle, color: noktaRenk, size: 14),
-                title: Text(
-                  maskeleSoyad(ogr.adSoyad),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                subtitle: Text(
-                  'Durak: ${ogr.koyDurak} • ${adimKisaEtiket(ogr)}',
-                  style: const TextStyle(color: Colors.grey, fontSize: 11),
-                ),
-                trailing: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal.shade800,
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: const Icon(Icons.phone, size: 14),
-                  label: const Text('Ara'),
-                  onPressed: () => akilliAramaPenceresi(
-                    context,
-                    maskeleSoyad(ogr.adSoyad),
-                    ogr.veliTel,
-                    ogr.ogrenciTel,
-                  ),
-                ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: Column(
+                children: [
+                  duyuruBandiWidget(duyuru),
+                  soforUyariBandiWidget(servisDurumu),
+                ],
               ),
-            );
-          },
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: ogrenciler.length,
+                itemBuilder: (context, index) {
+                  final ogr = ogrenciler[index];
+                  final bool izinliMi = ogr.izinli.isNotEmpty;
+                  final Color noktaRenk = izinliMi
+                      ? Colors.purpleAccent
+                      : (ogr.durum == 'serviste'
+                          ? Colors.greenAccent
+                          : (ogr.durum == 'indi'
+                              ? Colors.lightBlueAccent
+                              : Colors.grey));
+                  return Card(
+                    color: izinliMi
+                        ? const Color(0xFF2E1065)
+                        : const Color(0xFF1E293B),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: Icon(
+                        izinliMi ? Icons.event_busy_rounded : Icons.circle,
+                        color: noktaRenk,
+                        size: izinliMi ? 18 : 14,
+                      ),
+                      title: Text(
+                        maskeleSoyad(ogr.adSoyad),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Durak: ${ogr.koyDurak} • ${adimKisaEtiket(ogr)}',
+                        style: TextStyle(
+                          color: izinliMi ? Colors.purple.shade200 : Colors.grey,
+                          fontSize: 11,
+                        ),
+                      ),
+                      trailing: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal.shade800,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.phone, size: 14),
+                        label: const Text('Ara'),
+                        onPressed: () => akilliAramaPenceresi(
+                          context,
+                          maskeleSoyad(ogr.adSoyad),
+                          ogr.veliTel,
+                          ogr.ogrenciTel,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2458,20 +3026,52 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
   bool gorevBasladi = false;
   String gorevSaati = '';
   Map<String, Map<String, String>> servisDurumlari = {};
+  Map<String, dynamic>? duyuru;
+  List<Map<String, dynamic>> guvenlikUyarilari = [];
+  int kuyrukSayisi = 0;
 
   @override
   void initState() {
     super.initState();
     baslat();
+    _kuyruguKontrolEt(sessiz: true);
     otoYenileyici = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted &&
           girisYapildi &&
           token != null &&
           !yukleniyor &&
           !islemYapiliyor) {
+        _kuyruguKontrolEt(sessiz: true);
         verileriYenile(sessiz: true);
       }
     });
+  }
+
+  Future<void> _kuyruguKontrolEt({bool sessiz = false}) async {
+    final s = await OfflineKuyruk.sayi();
+    if (mounted && s != kuyrukSayisi) setState(() => kuyrukSayisi = s);
+    if (s <= 0) return;
+    final sonuc = await OfflineKuyruk.gonder();
+    if (!mounted) return;
+    setState(() => kuyrukSayisi = sonuc['kalan'] ?? 0);
+    if ((sonuc['gonderilen'] ?? 0) > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.teal.shade800,
+          content: Text(
+            '✅ Bekleyen ${sonuc['gonderilen']} çevrimdışı kayıt buluta aktarıldı!',
+          ),
+        ),
+      );
+      verileriYenile(sessiz: true);
+    } else if (!sessiz && (sonuc['kalan'] ?? 0) > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.orange,
+          content: Text('İnternet henüz yok, kayıtlar cihazda güvende bekliyor.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -2555,6 +3155,9 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
               'sabahGeldi': (v['sabahGeldi'] ?? '').toString(),
               'sabahTamam': (v['sabahTamam'] ?? '').toString(),
               'aksamHareket': (v['aksamHareket'] ?? '').toString(),
+              'soforUyarisi': (v['soforUyarisi'] ?? '').toString(),
+              'soforUyariTuru': (v['soforUyariTuru'] ?? '').toString(),
+              'soforUyariSaati': (v['soforUyariSaati'] ?? '').toString(),
             };
           }
         });
@@ -2570,6 +3173,15 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
       yeniIndex = seciliServisIndex;
     }
 
+    final rawDuyuru = veri['duyuru'];
+    final rawGuvenlik = veri['guvenlikUyarilari'];
+    final List<Map<String, dynamic>> yeniGuvenlik = [];
+    if (rawGuvenlik is List) {
+      for (final g in rawGuvenlik) {
+        if (g is Map) yeniGuvenlik.add(Map<String, dynamic>.from(g));
+      }
+    }
+
     setState(() {
       tumOgrenciler = ogrList;
       servisler = srvList;
@@ -2578,6 +3190,8 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
       gorevBasladi = gBasladi;
       gorevSaati = gSaati;
       servisDurumlari = yeniDurumlar;
+      duyuru = rawDuyuru is Map ? Map<String, dynamic>.from(rawDuyuru) : null;
+      guvenlikUyarilari = yeniGuvenlik;
     });
   }
 
@@ -2866,8 +3480,9 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
   }
 
   void aksamCikisKontrolEt(ServisHatti aktifServis) {
-    final sabahGelenler =
-        aktifServis.ogrenciler.where((o) => o.adim >= 2).toList();
+    final sabahGelenler = aktifServis.ogrenciler
+        .where((o) => o.adim >= 2 && o.izinli != 'TUM_GUN' && o.izinli != 'AKSAM')
+        .toList();
     final aksamBinmeyenler = sabahGelenler.where((o) => o.adim < 3).toList();
     if (aksamBinmeyenler.isNotEmpty) {
       showDialog(
@@ -2997,8 +3612,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
       return;
     }
 
-    setState(() => islemYapiliyor = true);
-    final res = await apiPost({
+    final paket = {
       'token': token,
       'okulNo': ogr.id,
       'plaka': plaka,
@@ -3008,12 +3622,15 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
       'islem': islemMetni,
       'yontem': 'Manuel (Öğretmen)',
       'ogretmen': seciliOgretmen?.adSoyad ?? 'Nöbetçi',
-    });
+    };
+
+    setState(() => islemYapiliyor = true);
+    final res = await apiPost(paket);
     if (!mounted) return;
     setState(() => islemYapiliyor = false);
 
     if (res['basarili'] == true) {
-      final now = DateTime.now();
+      final now = DateTime.now().toUtc().add(const Duration(hours: 3));
       final saatStr = (res['saat'] != null && res['saat'].toString().isNotEmpty)
           ? res['saat'].toString()
           : '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
@@ -3028,6 +3645,27 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
           content: Text('${ogr.adSoyad} ($islemMetni) kaydedildi!'),
         ),
       );
+    } else if (res['agHatasi'] == true) {
+      final yeniSayi =
+          await OfflineKuyruk.ekle(paket, '${ogr.adSoyad} ($islemMetni)');
+      final trNow = DateTime.now().toUtc().add(const Duration(hours: 3));
+      final saatStr =
+          '${trNow.hour.toString().padLeft(2, '0')}:${trNow.minute.toString().padLeft(2, '0')}';
+      if (!mounted) return;
+      setState(() {
+        kuyrukSayisi = yeniSayi;
+        ogr.adim = yeniAdim;
+        ogr.durum = yeniDurum;
+        ogr.saat = saatStr;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.orange.shade900,
+          content: Text(
+            '📡 İnternet yok! ${ogr.adSoyad} ($islemMetni) cihazda saklandı, bağlantı gelince gönderilecek.',
+          ),
+        ),
+      );
     } else if (res['yetkisiz'] == true) {
       await _yetkisizKontrol(res);
     } else {
@@ -3038,6 +3676,156 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
         SnackBar(
           backgroundColor: Colors.red.shade900,
           content: Text((res['hata'] ?? 'Kayıt gönderilemedi.').toString()),
+        ),
+      );
+    }
+  }
+
+  void izinliPenceresiAc(Ogrenci ogr, String plaka) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.purpleAccent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '📋 ${ogr.adSoyad} — İzinli Durumu',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Sadece okul idaresi ve nöbetçi öğretmen izinli işaretleyebilir.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 11),
+            ),
+            const SizedBox(height: 14),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple.shade700,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 42),
+              ),
+              icon: const Icon(Icons.event_busy_rounded, size: 18),
+              label: const Text('Tüm Gün İzinli (Binmeyecek)'),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _izinKaydet(ogr, plaka, 'OGRENCI_IZINLI', izinTuru: 'TUM_GUN');
+              },
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.indigo.shade700,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 42),
+              ),
+              icon: const Icon(Icons.wb_sunny_outlined, size: 18),
+              label: const Text('Sadece Sabah İzinli'),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _izinKaydet(ogr, plaka, 'OGRENCI_IZINLI', izinTuru: 'SABAH');
+              },
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueGrey.shade700,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 42),
+              ),
+              icon: const Icon(Icons.nights_stay_outlined, size: 18),
+              label: const Text('Sadece Akşam İzinli (Velisi Alacak)'),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _izinKaydet(ogr, plaka, 'OGRENCI_IZINLI', izinTuru: 'AKSAM');
+              },
+            ),
+            if (ogr.izinli.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.amberAccent,
+                  side: const BorderSide(color: Colors.amberAccent),
+                  minimumSize: const Size(double.infinity, 40),
+                ),
+                icon: const Icon(Icons.undo_rounded, size: 18),
+                label: const Text('İzni Kaldır'),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _izinKaydet(ogr, plaka, 'OGRENCI_IZIN_KALDIR');
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _izinKaydet(
+    Ogrenci ogr,
+    String plaka,
+    String islem, {
+    String izinTuru = '',
+  }) async {
+    if (token == null || islemYapiliyor) return;
+    setState(() => islemYapiliyor = true);
+    final paket = <String, dynamic>{
+      'token': token,
+      'okulNo': ogr.id,
+      'plaka': plaka,
+      'koy': ogr.koyDurak,
+      'adSoyad': ogr.adSoyad,
+      'sinif': ogr.sinif,
+      'islem': islem,
+      'yontem': 'Öğretmen Onayı',
+      'ogretmen': seciliOgretmen?.adSoyad ?? 'Nöbetçi',
+    };
+    if (izinTuru.isNotEmpty) paket['izinTuru'] = izinTuru;
+
+    final res = await apiPost(paket);
+    if (!mounted) return;
+    setState(() => islemYapiliyor = false);
+
+    if (res['basarili'] == true) {
+      setState(() {
+        ogr.izinli = islem == 'OGRENCI_IZIN_KALDIR' ? '' : izinTuru;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.deepPurple.shade700,
+          content: Text(
+            islem == 'OGRENCI_IZIN_KALDIR'
+                ? '${ogr.adSoyad} izni kaldırıldı.'
+                : '${ogr.adSoyad} izinli olarak kaydedildi.',
+          ),
+        ),
+      );
+    } else if (res['yetkisiz'] == true) {
+      await _yetkisizKontrol(res);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade900,
+          content: Text((res['hata'] ?? 'İzin kaydedilemedi.').toString()),
         ),
       );
     }
@@ -3384,22 +4172,45 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
             tooltip: 'Canlı Yenile',
             onPressed: yukleniyor ? null : () => verileriYenile(),
           ),
-          IconButton(
+          PopupMenuButton<String>(
             icon: const Icon(Icons.picture_as_pdf_rounded,
                 color: Colors.amberAccent, size: 22),
-            tooltip: 'Günün İmzalı Resmi PDF Raporunu İndir',
-            onPressed: () {
+            tooltip: 'Resmi MEB PDF Raporları',
+            onSelected: (secim) {
               if (token == null) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Resmi MEB İmzalı PDF Raporu Hazırlanıyor...'),
-                ),
-              );
-              linkAc(
-                context,
-                '$googleTabloWebhookUrl?islem=pdf_indir&token=$token',
-              );
+              if (secim == 'gunluk') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Resmi MEB İmzalı Günlük PDF Hazırlanıyor...'),
+                  ),
+                );
+                linkAc(
+                  context,
+                  '$googleTabloWebhookUrl?islem=pdf_indir&token=$token',
+                );
+              } else if (secim == 'puantaj') {
+                final tr = DateTime.now().toUtc().add(const Duration(hours: 3));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('MEB Aylık Servis Puantaj PDF Hazırlanıyor...'),
+                  ),
+                );
+                linkAc(
+                  context,
+                  '$googleTabloWebhookUrl?islem=aylik_puantaj_pdf&yil=${tr.year}&ay=${tr.month}&token=$token',
+                );
+              }
             },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'gunluk',
+                child: Text('📄 Günlük Resmi Yoklama PDF'),
+              ),
+              PopupMenuItem(
+                value: 'puantaj',
+                child: Text('🏛️ MEB Aylık Servis Puantaj PDF'),
+              ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, size: 20),
@@ -3413,6 +4224,40 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
           ? const Center(child: Text('Kayıtlı servis bulunamadı.'))
           : Column(
               children: [
+                if (duyuru != null ||
+                    (durumMap['soforUyarisi'] ?? '').isNotEmpty ||
+                    kuyrukSayisi > 0 ||
+                    guvenlikUyarilari.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+                    child: Column(
+                      children: [
+                        duyuruBandiWidget(duyuru),
+                        soforUyariBandiWidget(durumMap),
+                        kuyrukBandiWidget(
+                            kuyrukSayisi, () => _kuyruguKontrolEt()),
+                        if (guvenlikUyarilari.isNotEmpty)
+                          Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade900,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '⚠️ SERVİSTEN İNMEYEN ÖĞRENCİ (${guvenlikUyarilari.length}): ${guvenlikUyarilari.map((u) => '${u['adSoyad']} (${u['plaka']})').take(3).join(', ')}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 Container(
                   margin:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -3839,7 +4684,17 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                                             ),
                                           ),
                                           const SizedBox(height: 2),
-                                          _ogretmenDurumRozeti(ogr),
+                                          if (ogr.izinli.isNotEmpty)
+                                            Text(
+                                              '📋 İZİNLİ (${ogr.izinli == 'SABAH' ? 'Sabah' : (ogr.izinli == 'AKSAM' ? 'Akşam' : 'Tüm Gün')})',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.deepPurple,
+                                              ),
+                                            )
+                                          else
+                                            _ogretmenDurumRozeti(ogr),
                                           if (baskaServisteMi)
                                             Text(
                                               'SERVİSİ: $buOgrencininPlakasi',
@@ -3898,7 +4753,8 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                                             ),
                                           )
                                         else ...[
-                                          if (ogr.adim < 4)
+                                          if (ogr.adim < 4 &&
+                                              ogr.izinli != 'TUM_GUN')
                                             ElevatedButton(
                                               style: ElevatedButton.styleFrom(
                                                 backgroundColor:
@@ -3924,7 +4780,7 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                                                 ),
                                               ),
                                             )
-                                          else
+                                          else if (ogr.adim >= 4)
                                             const Text(
                                               'TAMAM',
                                               style: TextStyle(
@@ -3933,6 +4789,20 @@ class _OgretmenPaneliState extends State<OgretmenPaneli> {
                                                 fontWeight: FontWeight.bold,
                                               ),
                                             ),
+                                          IconButton(
+                                            icon: Icon(
+                                              Icons.event_busy_rounded,
+                                              size: 17,
+                                              color: ogr.izinli.isNotEmpty
+                                                  ? Colors.deepPurple
+                                                  : Colors.blueGrey,
+                                            ),
+                                            tooltip: 'İzinli İşaretle',
+                                            onPressed: islemYapiliyor
+                                                ? null
+                                                : () => izinliPenceresiAc(
+                                                    ogr, plaka),
+                                          ),
                                           if (ogr.adim > 0)
                                             IconButton(
                                               icon: const Icon(
