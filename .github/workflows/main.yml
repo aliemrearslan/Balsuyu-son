@@ -31,38 +31,71 @@ jobs:
 
       - run: flutter create . --platforms=android,web
 
-      # 1. Android İnternet & Kamera İzni, minSdk 23 ve Lint Ayarı
+      # 1. Android İzinleri (İnternet, Kamera, Bildirim), minSdk 23, Desugaring ve Lint Ayarı
       - run: |
           python3 -c "
           import os, re
 
-          # Manifest İzinleri (İnternet + Kamera)
+          # Manifest İzinleri ve Bildirim Boot Alıcıları
           m_path = 'android/app/src/main/AndroidManifest.xml'
           if os.path.exists(m_path):
               with open(m_path, 'r') as f:
                   m = f.read()
+              perms = [
+                  'android.permission.INTERNET',
+                  'android.permission.CAMERA',
+                  'android.permission.POST_NOTIFICATIONS',
+                  'android.permission.RECEIVE_BOOT_COMPLETED',
+                  'android.permission.VIBRATE',
+                  'android.permission.SCHEDULE_EXACT_ALARM',
+              ]
               izinler = ''
-              if 'android.permission.INTERNET' not in m:
-                  izinler += '<uses-permission android:name=\"android.permission.INTERNET\"/>\n    '
-              if 'android.permission.CAMERA' not in m:
-                  izinler += '<uses-permission android:name=\"android.permission.CAMERA\"/>\n    '
+              for p in perms:
+                  if p not in m:
+                      izinler += '<uses-permission android:name=\"' + p + '\"/>\n    '
               if izinler:
                   m = m.replace('<application', izinler + '<application', 1)
+              if 'ScheduledNotificationReceiver' not in m:
+                  receivers = (
+                      '        <receiver android:exported=\"false\" android:name=\"com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver\" />\n'
+                      '        <receiver android:exported=\"false\" android:name=\"com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver\">\n'
+                      '            <intent-filter>\n'
+                      '                <action android:name=\"android.intent.action.BOOT_COMPLETED\"/>\n'
+                      '                <action android:name=\"android.intent.action.MY_PACKAGE_REPLACED\"/>\n'
+                      '            </intent-filter>\n'
+                      '        </receiver>\n'
+                      '    </application>'
+                  )
+                  m = m.replace('</application>', receivers, 1)
               with open(m_path, 'w') as f:
                   f.write(m)
 
-          # minSdk 23 (mobile_scanner için) ve Lint Ayarları
+          # minSdk 23 (mobile_scanner), Core Library Desugaring (bildirimler) ve Lint Ayarları
           g_path = 'android/app/build.gradle' if os.path.exists('android/app/build.gradle') else ('android/app/build.gradle.kts' if os.path.exists('android/app/build.gradle.kts') else None)
           if g_path:
               with open(g_path, 'r') as f:
                   g = f.read()
               if 'build.gradle.kts' in g_path:
                   g = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', g)
+                  if 'isCoreLibraryDesugaringEnabled' not in g:
+                      g = g.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
                   g = g.replace('android {', 'android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }', 1)
+                  if 'desugar_jdk_libs' not in g:
+                      if 'dependencies {' in g:
+                          g = g.replace('dependencies {', 'dependencies {\n    coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.1.4\")', 1)
+                      else:
+                          g += '\ndependencies {\n    coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.1.4\")\n}\n'
               else:
                   g = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 23', g)
                   g = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', g)
+                  if 'coreLibraryDesugaringEnabled' not in g:
+                      g = g.replace('compileOptions {', 'compileOptions {\n        coreLibraryDesugaringEnabled true', 1)
                   g = g.replace('android {', 'android {\n    lintOptions {\n        checkReleaseBuilds false\n        abortOnError false\n    }', 1)
+                  if 'desugar_jdk_libs' not in g:
+                      if 'dependencies {' in g:
+                          g = g.replace('dependencies {', 'dependencies {\n    coreLibraryDesugaring \"com.android.tools:desugar_jdk_libs:2.1.4\"', 1)
+                      else:
+                          g += '\ndependencies {\n    coreLibraryDesugaring \"com.android.tools:desugar_jdk_libs:2.1.4\"\n}\n'
               with open(g_path, 'w') as f:
                   f.write(g)
           "
