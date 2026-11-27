@@ -28,13 +28,7 @@ jobs:
         run: python desktop/make_icons.py
 
       - name: Windows Tek Dosya EXE Derle
-        run: |
-          pyinstaller --noconfirm --clean --onefile --windowed ^
-            --name "Balsuyu_MTAL_Yonetim_Windows" ^
-            --icon "desktop/app_icon.ico" ^
-            --add-data "desktop/app_icon.ico;." ^
-            --collect-all customtkinter ^
-            desktop/yonetim.py
+        run: pyinstaller --noconfirm --clean --onefile --windowed --name "Balsuyu_MTAL_Yonetim_Windows" --icon "desktop/app_icon.ico" --add-data "desktop/app_icon.ico;." --collect-all customtkinter desktop/yonetim.py
 
       - name: Windows Çıktısını Yükle
         uses: actions/upload-artifact@v4
